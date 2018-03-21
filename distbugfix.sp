@@ -17,6 +17,8 @@ float g_fLastSpeedInAir[MAXPLAYERS + 1][3];
 float g_fTickRate;
 float g_fTickGravity = 800.0;
 int g_iFramesOnGround[MAXPLAYERS + 1];
+int g_iTicksOverlapped[MAXPLAYERS + 1];
+int g_iNoKeys[MAXPLAYERS + 1];
 bool g_bLastJump[MAXPLAYERS + 1] = false;
 bool g_bJumpEnd[MAXPLAYERS + 1] = false;
 bool g_bDistbug[MAXPLAYERS + 1] = false;
@@ -34,7 +36,7 @@ public Plugin myinfo =
 	name = "Distance Bug Fix", 
 	author = "GameChaos", 
 	description = "Fixes longjump distance bug", 
-	version = "0.2"
+	version = "0.3"
 };
 
 public void OnPluginStart()
@@ -54,6 +56,17 @@ public void OnConfigsExecuted()
 	CloseHandle(gravity);
 }
 
+/* Commands */
+
+public Action Command_Distbug(int client, int args)
+{
+	g_bDistbug[client] = !g_bDistbug[client];
+	CPrintToChat(client, "%s Distbug has been %s.", PREFIX, g_bDistbug[client] ? "enabled" : "disabled");
+	return Plugin_Handled;
+}
+
+/* Events */
+
 // Hook pre jump to reset height
 public Action Event_OnJump_Pre(Handle event, const char[] name, bool broadcast)
 {
@@ -63,13 +76,6 @@ public Action Event_OnJump_Pre(Handle event, const char[] name, bool broadcast)
 	{
 		g_fMaxHeight[client] = -99999.0;
 	}
-}
-
-public Action Command_Distbug(int client, int args)
-{
-	g_bDistbug[client] = !g_bDistbug[client];
-	CPrintToChat(client, "%s Distbug has been %s.", PREFIX, g_bDistbug[client] ? "enabled" : "disabled");
-	return Plugin_Handled;
 }
 
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2])
@@ -92,11 +98,17 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 				JumpLand(client);
 			}
 			g_iFramesInAir[client] = 0;
+			g_iNoKeys[client] = 0;
+			g_iTicksOverlapped[client] = 0;
 		}
 		else if (GetEntityMoveType(client) != MOVETYPE_NOCLIP && GetEntityMoveType(client) != MOVETYPE_LADDER)
 		{
 			g_iFramesOnGround[client] = 0;
 			g_iFramesInAir[client]++;
+			if (buttons & IN_MOVERIGHT && buttons & IN_MOVELEFT) 
+				g_iTicksOverlapped[client]++;
+			if (!(buttons & IN_MOVERIGHT) && !(buttons & IN_MOVELEFT))
+				g_iNoKeys[client]++;
 			g_fLastLastPosInAir[client] = g_fLastPosInAir[client];
 			GetEntPropVector(client, Prop_Data, "m_vecVelocity", g_fLastSpeedInAir[client]);
 			GetClientAbsOrigin(client, g_fLastPosInAir[client]);
@@ -118,6 +130,8 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 	}
 	return Plugin_Changed;
 }
+
+/* Helpers */
 
 public JumpLand(int client)
 {
@@ -147,8 +161,8 @@ public JumpLand(int client)
 	
 	if (distance >= MINDIST && distance <= MAXDIST)
 	{
-		CPrintToChat(client, "%s{grey} %sRealDist: {default}%f{grey} [{lime}%.4f{grey} Height | {lime}%i{grey} Airtime | -W: %s]", PREFIX, g_bBugged[client] ? "(BUGGED) " : "", distance, jumpHeight, airTime, g_bW[client] ? "{green}YE{grey}" : "{darkred}NO{grey}");
-		PrintToConsole(client, "[GC] %sRealDist: %f [%.4f Height | %i Airtime | -W: %s]", g_bBugged[client] ? "(BUGGED) " : "", distance, jumpHeight, airTime, g_bW[client] ? "YE" : "NO");
+		CPrintToChat(client, "%s{grey} %sRealDist: {default}%f{grey} [{lime}%.4f{grey} Height | {lime}%i{grey} Airtime | -W: %s | {lime}%i{grey} Overlap | Dead Airtime: {lime}%i{grey}]", PREFIX, g_bBugged[client] ? "(BUGGED) " : "", distance, jumpHeight, airTime, g_bW[client] ? "{green}YE{grey}" : "{darkred}NO{grey}", g_iTicksOverlapped[client], g_iNoKeys[client]);
+		PrintToConsole(client, "[GC] %sRealDist: %f [%.4f Height | %i Airtime | -W: %s | %i Overlap | Dead Airtime: %i]", g_bBugged[client] ? "(BUGGED) " : "", distance, jumpHeight, airTime, g_bW[client] ? "YE" : "NO", g_iTicksOverlapped[client], g_iNoKeys[client]);
 	}
 	g_bJumpEnd[client] = true;
 }
