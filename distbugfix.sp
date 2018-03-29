@@ -11,14 +11,20 @@
 #define PREFIX "\x01[\x05GC\x01]"
 
 float g_fJumpPosition[MAXPLAYERS + 1][3];
+float g_fPosition[MAXPLAYERS + 1][3];
 float g_fLastPosInAir[MAXPLAYERS + 1][3];
 float g_fLastLastPosInAir[MAXPLAYERS + 1][3];
 float g_fLastSpeedInAir[MAXPLAYERS + 1][3];
 float g_fTickRate;
 float g_fTickGravity = 800.0;
+float g_fFailDistance[MAXPLAYERS + 1];
+int g_iFramesInAir[MAXPLAYERS + 1];
 int g_iFramesOnGround[MAXPLAYERS + 1];
 int g_iTicksOverlapped[MAXPLAYERS + 1];
 int g_iNoKeys[MAXPLAYERS + 1];
+int g_iFailAirTime[MAXPLAYERS + 1];
+int g_iFailDeadAirTime[MAXPLAYERS + 1];
+int g_iFailOverlap[MAXPLAYERS + 1];
 bool g_bLastJump[MAXPLAYERS + 1] = false;
 bool g_bJumpEnd[MAXPLAYERS + 1] = false;
 bool g_bDistbug[MAXPLAYERS + 1] = false;
@@ -29,14 +35,13 @@ bool g_bW[MAXPLAYERS + 1] = false;
 
 // FOR HEIGHT calc
 float g_fMaxHeight[MAXPLAYERS + 1];
-int g_iFramesInAir[MAXPLAYERS + 1];
 
 public Plugin myinfo = 
 {
 	name = "Distance Bug Fix", 
 	author = "GameChaos", 
 	description = "Fixes longjump distance bug", 
-	version = "0.3"
+	version = "0.4"
 };
 
 public void OnPluginStart()
@@ -82,13 +87,14 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 {
 	if (IsValidClient(client) && g_bDistbug[client])
 	{
+		GetClientAbsOrigin(client, g_fPosition[client])
 		if (GetEntityFlags(client) & FL_ONGROUND)
 		{
 			g_iFramesOnGround[client]++;
 			
 			if (g_iFramesOnGround[client] > 1 && buttons & IN_JUMP && !g_bLastJump[client])
 			{
-				GetClientAbsOrigin(client, g_fJumpPosition[client]);
+				g_fJumpPosition[client] = g_fPosition[client];
 				g_bJumpEnd[client] = false;
 				g_bBind[client] = (buttons & IN_JUMP && !g_bLastJump[client]) && (buttons & IN_DUCK && !g_bLastDuck[client]);
 				g_bW[client] = !(buttons & IN_FORWARD);
@@ -105,10 +111,24 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		{
 			g_iFramesOnGround[client] = 0;
 			g_iFramesInAir[client]++;
-			if (buttons & IN_MOVERIGHT && buttons & IN_MOVELEFT) 
+			
+			if (buttons & IN_MOVERIGHT && buttons & IN_MOVELEFT)
+			{
 				g_iTicksOverlapped[client]++;
+			}
 			if (!(buttons & IN_MOVERIGHT) && !(buttons & IN_MOVELEFT))
+			{
 				g_iNoKeys[client]++;
+			}
+			
+			if (!g_bJumpEnd[client] && g_fPosition[client][2] > g_fJumpPosition[client][2] && g_fPosition[client][2] < g_fJumpPosition[client][2] + 16)
+			{
+				g_fFailDistance[client] = GetFailDistance(client, g_fPosition[client]);
+				g_iFailAirTime[client] = g_iFramesInAir[client];
+				g_iFailDeadAirTime[client] = g_iNoKeys[client];
+				g_iFailOverlap[client] = g_iTicksOverlapped[client];
+			}
+			
 			g_fLastLastPosInAir[client] = g_fLastPosInAir[client];
 			GetEntPropVector(client, Prop_Data, "m_vecVelocity", g_fLastSpeedInAir[client]);
 			GetClientAbsOrigin(client, g_fLastPosInAir[client]);
@@ -133,6 +153,15 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 
 /* Helpers */
 
+float GetFailDistance(int client, float position[3])
+{
+	float speed;
+	
+	speed = GetEntPropFloat(client, Prop_Data, "m_flFallVelocity");
+	
+	return CalcJumpDistance(client, g_fLastSpeedInAir[client], g_fTickRate, g_fLastPosInAir[client], g_fLastLastPosInAir[client], g_fJumpPosition[client], speed, position, true);
+}
+
 public JumpLand(int client)
 {
 	float speed;
@@ -149,20 +178,31 @@ public JumpLand(int client)
 	TraceGround(client, g_fJumpPosition[client], jumpground);
 	TraceGround(client, position, landground);
 	
+	jumpHeight = GetHeight(client);
+	
 	if (CheckOffset(jumpground[2], landground[2]))
 	{
 		g_bJumpEnd[client] = true;
+		if (jumpground[2] > landground[2])
+		{
+			CPrintToChat(client, "%s{grey} FAILED LJ: {default}%f{grey} [{lime}%.4f{grey} Height | {lime}%i{grey} Airtime | -W: %s | {lime}%i{grey} Overlap | Dead Airtime: {lime}%i{grey}]", PREFIX, g_fFailDistance[client], jumpHeight, g_iFailAirTime[client], g_bW[client] ? "{green}YE{grey}" : "{darkred}NO{grey}", g_iFailOverlap[client], g_iFailDeadAirTime[client]);
+			char output[256];
+			FormatEx(output, sizeof(output), "[GC] FAILED LJ: %f [%.4f Height | %i Airtime | -W: %s | %i Overlap | Dead Airtime: %i]", g_fFailDistance[client], jumpHeight, g_iFailAirTime[client], g_bW[client] ? "YE" : "NO", g_iFailOverlap[client], g_iFailDeadAirTime[client]);
+			PrintToConsole(client, output);
+			EchoToSpectators(client, output);
+		}
 		return;
 	}
-	
-	jumpHeight = GetHeight(client);
 				
-	distance = CalcJumpDistance(client, g_fLastSpeedInAir[client], g_fTickRate, g_fLastPosInAir[client], g_fLastLastPosInAir[client], g_fJumpPosition[client], speed, position);
+	distance = CalcJumpDistance(client, g_fLastSpeedInAir[client], g_fTickRate, g_fLastPosInAir[client], g_fLastLastPosInAir[client], g_fJumpPosition[client], speed, position, false);
 	
 	if (distance >= MINDIST && distance <= MAXDIST)
 	{
 		CPrintToChat(client, "%s{grey} %sRealDist: {default}%f{grey} [{lime}%.4f{grey} Height | {lime}%i{grey} Airtime | -W: %s | {lime}%i{grey} Overlap | Dead Airtime: {lime}%i{grey}]", PREFIX, g_bBugged[client] ? "(BUGGED) " : "", distance, jumpHeight, airTime, g_bW[client] ? "{green}YE{grey}" : "{darkred}NO{grey}", g_iTicksOverlapped[client], g_iNoKeys[client]);
-		PrintToConsole(client, "[GC] %sRealDist: %f [%.4f Height | %i Airtime | -W: %s | %i Overlap | Dead Airtime: %i]", g_bBugged[client] ? "(BUGGED) " : "", distance, jumpHeight, airTime, g_bW[client] ? "YE" : "NO", g_iTicksOverlapped[client], g_iNoKeys[client]);
+		char output[256];
+		FormatEx(output, sizeof(output), "[GC] %sRealDist: %f [%.4f Height | %i Airtime | -W: %s | %i Overlap | Dead Airtime: %i]", g_bBugged[client] ? "(BUGGED) " : "", distance, jumpHeight, airTime, g_bW[client] ? "YE" : "NO", g_iTicksOverlapped[client], g_iNoKeys[client]);
+		PrintToConsole(client, output);
+		EchoToSpectators(client, output);
 	}
 	g_bJumpEnd[client] = true;
 }
@@ -192,7 +232,7 @@ float GetHeight(int client)
 	}
 }
 
-stock float CalcJumpDistance(int client, float LastSpeedInAir[3], float TickRate, float LastPosInAir[3], float LastLastPosInAir[3], float JumpPosition[3], float speed, float position[3])
+stock float CalcJumpDistance(int client, float LastSpeedInAir[3], float TickRate, float LastPosInAir[3], float LastLastPosInAir[3], float JumpPosition[3], float speed, float position[3], bool failed)
 {
 	float distance;
 	float tickdistx;
@@ -201,15 +241,26 @@ stock float CalcJumpDistance(int client, float LastSpeedInAir[3], float TickRate
 	float groundoffset;
 	float multiplier;
 	
-	if (position[2] == JumpPosition[2])
+	if (!failed)
 	{
-		groundoffset	= JumpPosition[2] - LastPosInAir[2];
-		tickspeedz		= FloatAbs(LastSpeedInAir[2] + g_fTickGravity) / g_fTickRate;
-		multiplier		= (tickspeedz - groundoffset) / tickspeedz;
-		tickdistx		= FloatAbs(LastLastPosInAir[0] - LastPosInAir[0]) * multiplier;
-		tickdisty		= FloatAbs(LastLastPosInAir[1] - LastPosInAir[1]) * multiplier;
-		distance = CalcDistance(FloatAbs(JumpPosition[0] - LastLastPosInAir[0]) + tickdistx, FloatAbs(JumpPosition[1] - LastLastPosInAir[1]) + tickdisty);
-		g_bBugged[client] = true;
+		if (position[2] == JumpPosition[2])
+		{
+			groundoffset	= JumpPosition[2] - LastPosInAir[2];
+			tickspeedz		= FloatAbs(LastSpeedInAir[2] + g_fTickGravity) / g_fTickRate;
+			multiplier		= (tickspeedz - groundoffset) / tickspeedz;
+			tickdistx		= FloatAbs(LastLastPosInAir[0] - LastPosInAir[0]) * multiplier;
+			tickdisty		= FloatAbs(LastLastPosInAir[1] - LastPosInAir[1]) * multiplier;
+			distance = CalcDistance(FloatAbs(JumpPosition[0] - LastLastPosInAir[0]) + tickdistx, FloatAbs(JumpPosition[1] - LastLastPosInAir[1]) + tickdisty);
+		}
+		else
+		{
+			groundoffset	= JumpPosition[2] - position[2];
+			tickspeedz		= FloatAbs(LastSpeedInAir[2]) / g_fTickRate;
+			multiplier		= (tickspeedz - groundoffset) / tickspeedz;
+			tickdistx		= FloatAbs(LastPosInAir[0] - position[0]) * multiplier;
+			tickdisty		= FloatAbs(LastPosInAir[1] - position[1]) * multiplier;
+			distance = CalcDistance(FloatAbs(JumpPosition[0] - LastPosInAir[0]) + tickdistx, FloatAbs(JumpPosition[1] - LastPosInAir[1]) + tickdisty);
+		}
 	}
 	else
 	{
@@ -219,7 +270,6 @@ stock float CalcJumpDistance(int client, float LastSpeedInAir[3], float TickRate
 		tickdistx		= FloatAbs(LastPosInAir[0] - position[0]) * multiplier;
 		tickdisty		= FloatAbs(LastPosInAir[1] - position[1]) * multiplier;
 		distance = CalcDistance(FloatAbs(JumpPosition[0] - LastPosInAir[0]) + tickdistx, FloatAbs(JumpPosition[1] - LastPosInAir[1]) + tickdisty);
-		g_bBugged[client] = false;
 	}
 	
 	return distance + 32;
@@ -264,4 +314,20 @@ stock bool IsValidClient(int client)
 public bool TraceEntityFilterPlayer(int entity, any data)
 {
 	return entity > MAXPLAYERS;
+}
+
+public void EchoToSpectators(int client, const char[] output) 
+{
+	for (int i = 1; i <= MaxClients; i++)
+	{
+		if (i == client || !IsValidClient(i) || !IsClientObserver(i)) continue;
+
+		int specMode = GetEntProp(client, Prop_Send, "m_iObserverMode");
+		// 4 = 1st person, 5 = 3rd person
+		if (specMode != 4 && specMode != 5) continue;
+
+		// Check if spectating client
+		if (GetEntPropEnt(i, Prop_Send, "m_hObserverTarget") != client) continue;
+		PrintToConsole(client, output);
+	}
 }
