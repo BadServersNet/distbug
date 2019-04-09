@@ -111,7 +111,7 @@ void EchoToSpectators(int client, const char[] conOutput, const char[] chatOutpu
 	
 	for (int i = 1; i <= MaxClients; i++)
 	{
-		if (i == client || !IsClientConnected(i) || !IsClientObserver(i))
+		if (i == client || !IsValidClient(i) || !IsClientObserver(i))
 		{
 			continue;
 		}

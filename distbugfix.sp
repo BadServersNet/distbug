@@ -20,7 +20,7 @@ public Plugin myinfo =
 	name = "Distance Bug Fix", 
 	author = "GameChaos", 
 	description = "Fixes longjump distance bug", 
-	version = "1.0"
+	version = "1.01"
 };
 
 public void OnPluginStart()
