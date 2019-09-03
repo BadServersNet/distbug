@@ -1,25 +1,15 @@
+// ======
+// GLOBAL
+// ======
 
-
-/*
- *
- * global variables
- *
- */
-
-
-Handle g_hGravity = INVALID_HANDLE;
+// cvars
 Handle g_hMinJumpDistance = INVALID_HANDLE;
 Handle g_hMaxJumpDistance = INVALID_HANDLE;
-
-float g_fTickRate;
-float g_fTickGravity = 800.0;
-
 float g_fMinJumpDistance;
 float g_fMaxJumpDistance;
 
-
-
-
+bool g_bLateLoad;
+float g_fTickRate;
 
 float g_fJumpPosition[MAXPLAYERS + 1][3];
 float g_fPosition[MAXPLAYERS + 1][3];
@@ -52,11 +42,12 @@ int g_iFailOverlap[MAXPLAYERS + 1];
 int g_iLastButtons[MAXPLAYERS + 1];
 
 bool g_bValidJump[MAXPLAYERS + 1];
-bool g_bDistbug[MAXPLAYERS + 1];
-bool g_bStrafeStats[MAXPLAYERS + 1];
 bool g_bInAir[MAXPLAYERS + 1];
 bool g_bBlock[MAXPLAYERS + 1];
 
+// ===========
+// STRAFESTATS
+// ===========
 
 float g_fStatStrafeGain[MAXPLAYERS + 1][MAXSTRAFES];
 float g_fStatStrafeLoss[MAXPLAYERS + 1][MAXSTRAFES];
@@ -68,6 +59,10 @@ int g_iStatStrafeDead[MAXPLAYERS + 1][MAXSTRAFES];
 int g_iStatStrafeCount[MAXPLAYERS + 1];
 int g_iStatSync[MAXPLAYERS + 1];
 
+float g_fMaxHeight[MAXPLAYERS + 1];
+float g_fAirDistance[MAXPLAYERS + 1];
+float g_fFailAirDistance[MAXPLAYERS + 1];
+
 float g_fFailStatStrafeGain[MAXPLAYERS + 1][MAXSTRAFES];
 float g_fFailStatStrafeLoss[MAXPLAYERS + 1][MAXSTRAFES];
 float g_fFailStatStrafeMax[MAXPLAYERS + 1][MAXSTRAFES];
@@ -78,4 +73,9 @@ int g_iFailStatStrafeDead[MAXPLAYERS + 1][MAXSTRAFES];
 int g_iFailStatStrafeCount[MAXPLAYERS + 1];
 int g_iFailStatSync[MAXPLAYERS + 1];
 
-float g_fMaxHeight[MAXPLAYERS + 1];
+// ===========
+// CLIENTPREFS
+// ===========
+
+Handle g_hDistbugCookie;
+int g_iSettings[MAXPLAYERS + 1];

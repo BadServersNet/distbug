@@ -35,36 +35,36 @@ void IncStrafeCount(int client, float vel[3])
 
 void CheckStrafeStats(int client, int &buttons, float vel[3], float speed, float lastspeed)
 {
-	if (g_iStatStrafeCount[client] > MAXSTRAFES)
+	IncStrafeCount(client, vel);
+	
+	if (g_iStatStrafeCount[client] >= MAXSTRAFES)
 	{
 		return;
 	}
 	
-	IncStrafeCount(client, vel);
+	int iStrafe = g_iStatStrafeCount[client];
 	
-	int strafe = g_iStatStrafeCount[client];
-	
-	g_fStatStrafeAirtime[client][strafe] += 1.0;
+	g_fStatStrafeAirtime[client][iStrafe] += 1.0;
 	
 	if (CheckMaxSpeed(speed, lastspeed))
-		g_fStatStrafeMax[client][strafe] = speed;
+		g_fStatStrafeMax[client][iStrafe] = speed;
 	
 	if (IsOverlapping(buttons))
 	{
-		g_iStatStrafeOverlap[client][strafe]++;
+		g_iStatStrafeOverlap[client][iStrafe]++;
 	}
 	else if (IsDeadAirtime(buttons))
 	{
-		g_iStatStrafeDead[client][strafe]++;
+		g_iStatStrafeDead[client][iStrafe]++;
 	}
 	
 	if (IsStrafeSynced(speed, lastspeed))
 	{
-		g_fStatStrafeGain[client][strafe] += speed - lastspeed;
-		g_fStatStrafeSync[client][strafe] += 1.0;
+		g_fStatStrafeGain[client][iStrafe] += speed - lastspeed;
+		g_fStatStrafeSync[client][iStrafe] += 1.0;
 	}
 	else
 	{
-		g_fStatStrafeLoss[client][strafe] += lastspeed - speed;
+		g_fStatStrafeLoss[client][iStrafe] += lastspeed - speed;
 	}
 }

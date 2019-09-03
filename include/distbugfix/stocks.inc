@@ -15,7 +15,7 @@
  * @param lineDirection The direction vector of the line.
  * @param result		The resultant vector.
  */
-stock void lineIntersection(float planePoint[3], float planeNormal[3], float linePoint[3], float lineDirection[3], float result[3])
+stock void lineIntersection(const float planePoint[3], const float planeNormal[3], const float linePoint[3], const float lineDirection[3], float result[3])
 {
 	if (GetVectorDotProduct(planeNormal, lineDirection) == 0)
 	{
@@ -26,21 +26,38 @@ stock void lineIntersection(float planePoint[3], float planeNormal[3], float lin
 			 - GetVectorDotProduct(planeNormal, linePoint))
 			 / GetVectorDotProduct(planeNormal, lineDirection);
 	
-	ScaleVector(lineDirection, t);
+	float lineDir[3];
+	CopyVector(lineDirection, lineDir);
+	NormalizeVector(lineDir, lineDir);
+	
+	ScaleVector(lineDir, t);
 	
 	AddVectors(linePoint, lineDirection, result);
 }
 
-stock bool TraceLandPos(int client, float pos[3], float velocity[3], float result[3], float tickGravity)
+stock bool TraceLandPos(int client, const float pos[3], const float velocity[3], float result[3], bool bugged = false)
 {
 	float mins[3];
 	float maxs[3];
-	
 	float pos2[3];
+	float newVel[3];
 	
-	AddVectors(pos, velocity, pos2);
+	CopyVector(velocity, newVel);
 	
-	velocity[2] -= tickGravity;
+	float fGravity = FindConVar("sv_gravity").FloatValue;
+	if (bugged)
+	{
+		// add 0.5 gravity
+		newVel[2] -= fGravity * GetTickInterval() / 2.0;
+	}
+	else
+	{
+		// add 1.5 gravity
+		newVel[2] -= fGravity * GetTickInterval() / 2.0 * 3.0;
+	}
+	
+	ScaleVector(newVel, GetTickInterval() * 2.0);
+	AddVectors(pos, newVel, pos2);
 	
 	GetClientMins(client, mins);
 	GetClientMaxs(client, maxs);
@@ -49,6 +66,7 @@ stock bool TraceLandPos(int client, float pos[3], float velocity[3], float resul
 	
 	if (!TR_DidHit(trace))
 	{
+		CopyVector(pos, result);
 		CloseHandle(trace);
 		return false;
 	}
@@ -59,12 +77,12 @@ stock bool TraceLandPos(int client, float pos[3], float velocity[3], float resul
 	return true;
 }
 
-stock int BlockDirection(float jumpoff[3], float position[3])
+stock int BlockDirection(const float jumpoff[3], const float position[3])
 {
 	return FloatAbs(position[1] - jumpoff[1]) > FloatAbs(position[0] - jumpoff[0]);
 }
 
-stock void TraceGround(int client, float pos[3], float result[3])
+stock bool TraceGround(int client, const float pos[3], float result[3])
 {
 	float mins[3];
 	float maxs[3];
@@ -77,20 +95,21 @@ stock void TraceGround(int client, float pos[3], float result[3])
 	
 	startpos = pos;
 	endpos = pos;
-	
-	startpos[2]++;
-	endpos[2]--;
+	endpos[2] -= 2.0;
 	
 	Handle trace = TR_TraceHullFilterEx(startpos, endpos, mins, maxs, MASK_PLAYERSOLID, TraceEntityFilterPlayer);
 	
 	if (TR_DidHit(trace))
 	{
 		TR_GetEndPosition(result, trace);
+		CloseHandle(trace);
+		return true;
 	}
 	CloseHandle(trace);
+	return false;
 }
 
-stock bool TraceBlock(float pos2[3], float position[3], float result[3])
+stock bool TraceBlock(const float pos2[3], const float position[3], float result[3])
 {
 	float mins[3] =  { -16.0, -16.0, -1.0 };
 	float maxs[3] =  { 16.0, 16.0, 0.0 };
@@ -123,7 +142,7 @@ stock float GetVectorHorLength(const float vec[3])
 	return GetVectorLength(tempVec);
 }
 
-stock float GetVectorHorDistance(float x[3], float y[3])
+stock float GetVectorHorDistance(const float x[3], const float y[3])
 {
 	float x2[3];
 	float y2[3];
@@ -195,4 +214,58 @@ public float NormaliseAngle(float angle)
 	}
 	
 	return angle;
-} 
+}
+
+stock float GetEyeRayPosition(int client, float end[3])
+{
+	float start[3];
+	float angle[3];
+	
+	GetClientEyePosition(client, start);
+	GetClientEyeAngles(client, angle);
+	
+	TR_TraceRayFilter(start, angle, MASK_PLAYERSOLID, RayType_Infinite, TraceEntityFilterPlayer, client);
+	
+	if (TR_DidHit(INVALID_HANDLE))
+	{
+		TR_GetEndPosition(end, INVALID_HANDLE);
+	}
+}
+
+stock float CalcIntPercentage(int total, int fraction)
+{
+	if (total == 0)
+	{
+		return 0.0;
+	}
+	float fTotal = total + 0.0;
+	float fFraction = fraction + 0.0;
+	return fFraction / fTotal * 100.0;
+}
+
+stock void PrintToChatAdmins(const char[] format, any ...)
+{
+	char buffer[254];
+	
+	for (int i = 1; i <= MaxClients; i++)
+	{
+		if (IsClientInGame(i))
+		{
+			AdminId id = GetUserAdmin(i);
+			if (!GetAdminFlag(id, Admin_Generic))
+			{
+				continue;
+			}
+			SetGlobalTransTarget(i);
+			VFormat(buffer, sizeof(buffer), format, 2);
+			PrintToChat(i, "%s", buffer);
+		}
+	}
+}
+
+stock void CopyVector(const float source[3], float dest[3])
+{
+	dest[0] = source[0];
+	dest[1] = source[1];
+	dest[2] = source[2];
+}

@@ -1,53 +1,55 @@
-
-
 /*
  *
  * chat and console reporting
  *
  */
 
-
-void PrintFailStat(int client, char[] szDist, char[] szEdge, char[] szBlockdist, char[] szJumpHeight, char[] szSync, char[] szAirtime, char[] szWRelease, char[] szOverlap, char[] szDeadAirtime)
+void PrintFailStat(int client, char[] szDist, char[] szEdge, char[] szJumpHeight, char[] szSync, char[] szAirtime, char[] szWRelease, char[] szOverlap, char[] szDeadAirtime, char[] szDeviation)
 {
-	char chatOutput[256];
-	FormatEx(chatOutput, sizeof(chatOutput), "%s{grey} %s %s%s[ %s | %s | %s | %s | %s | %s ]",
-			PREFIX, szDist, szEdge, szBlockdist, szJumpHeight, szSync, szAirtime, szWRelease, szOverlap, szDeadAirtime);
+	char chatOutput[320];
+	FormatEx(chatOutput, sizeof(chatOutput), "%s{grey} %s (Air: %.4f) [%s%s | %s | %s | %s | %s | %s | %s]",
+			PREFIX, szDist, g_fFailAirDistance[client] + 32.0, szEdge, szJumpHeight, szSync, szAirtime, szWRelease, szOverlap, szDeadAirtime, szDeviation);
 	
 	CPrintToChat(client, chatOutput);
 	
-	char conOutput[256];
+	char conOutput[320];
 	strcopy(conOutput, sizeof(conOutput), chatOutput);
 	CRemoveTags(conOutput, sizeof(conOutput));
 	PrintToConsole(client, conOutput);
 	
 	EchoToSpectators(client, conOutput, chatOutput);
 	
-	if (g_bStrafeStats[client])
+	if ((g_iSettings[client] & FL_SETTINGS_STRAFESTATS))
 	{
-		PrintStrafeStats(client, g_fFailStatStrafeGain[client],
-			g_fFailStatStrafeLoss[client], g_fFailStatStrafeMax[client],
-			g_fFailStatStrafeSync[client], g_fFailStatStrafeAirtime[client],
-			g_iFailAirTime[client], g_iFailStatStrafeOverlap[client],
-			g_iFailStatStrafeDead[client], g_iFailStatStrafeCount[client]);
+		PrintStrafeStats(client,
+			g_fFailStatStrafeGain[client],
+			g_fFailStatStrafeLoss[client],
+			g_fFailStatStrafeMax[client],
+			g_fFailStatStrafeSync[client],
+			g_fFailStatStrafeAirtime[client],
+			g_iFailAirTime[client],
+			g_iFailStatStrafeOverlap[client],
+			g_iFailStatStrafeDead[client],
+			g_iFailStatStrafeCount[client]);
 	}
 }
 
-void PrintJumpstat(int client, char[] szDist, char[] szEdge, char[] szBlockdist, char[] szJumpHeight, char[] szSync, char[] szAirtime, char[] szWRelease, char[] szOverlap, char[] szDeadAirtime)
+void PrintJumpstat(int client, char[] szDist, char[] szEdge, char[] szBlockdist, char[] szJumpHeight, char[] szSync, char[] szAirtime, char[] szWRelease, char[] szOverlap, char[] szDeadAirtime, char[] szDeviation)
 {
-	char chatOutput[256];
-	FormatEx(chatOutput, sizeof(chatOutput), "%s{grey} %s %s%s[ %s | %s | %s | %s | %s | %s ]",
-			PREFIX, szDist, szEdge, szBlockdist, szJumpHeight, szSync, szAirtime, szWRelease, szOverlap, szDeadAirtime);
+	char chatOutput[320];
+	FormatEx(chatOutput, sizeof(chatOutput), "%s{grey} %s (Air: %.4f) [%s%s%s | %s | %s | %s | %s | %s | %s]",
+			PREFIX, szDist, g_fAirDistance[client] + 32.0, szEdge, szBlockdist, szJumpHeight, szSync, szAirtime, szWRelease, szOverlap, szDeadAirtime, szDeviation);
 	
 	CPrintToChat(client, chatOutput);
 	
-	char conOutput[256];
+	char conOutput[320];
 	strcopy(conOutput, sizeof(conOutput), chatOutput);
 	CRemoveTags(conOutput, sizeof(conOutput));
 	PrintToConsole(client, conOutput);
 	
 	EchoToSpectators(client, conOutput, chatOutput);
 	
-	if (g_bStrafeStats[client])
+	if ((g_iSettings[client] & FL_SETTINGS_STRAFESTATS))
 	{
 		PrintStrafeStats(client,
 			g_fStatStrafeGain[client],
@@ -69,10 +71,11 @@ void PrintStrafeStats(int client, float gain[MAXSTRAFES],
 {
 	char strafeStats[2048];
 	float sync;
-	float airtime;
+	int airtime;
+	float avgGain;
 	
-	FormatEx(strafeStats, sizeof(strafeStats), "#.    Sync    Gain    Loss      Max   Airtime  OL  DA\n");
-	for (int i = 1; i <= strafeCount; i++)
+	FormatEx(strafeStats, sizeof(strafeStats), "#.    Sync    Gain    Loss      Max  Airtime  OL  DA   Avg Gain\n");
+	for (int i = 1; i <= strafeCount && i < MAXSTRAFES; i++)
 	{
 		char szSync[16];
 		char szGain[16];
@@ -81,20 +84,23 @@ void PrintStrafeStats(int client, float gain[MAXSTRAFES],
 		char szAirtime[16];
 		char szOverlap[16];
 		char szDead[16];
+		char szAvgGain[16];
 		
-		airtime = strafeAirtime[i] / jumpAirtime * 100.0;
+		airtime = RoundFloat(strafeAirtime[i]); // / jumpAirtime * 100.0;
 		sync = strafeSync[i] / strafeAirtime[i] * 100;
+		avgGain = gain[i] / strafeAirtime[i]; //* (strafeAirtime[i] / g_fTickRate);
 		
 		FormatEx(szSync, sizeof(szSync), "%5.1f", sync);
 		FormatEx(szGain, sizeof(szGain), "%6.2f", gain[i]);
 		FormatEx(szLoss, sizeof(szLoss), "%6.2f", loss[i]);
 		FormatEx(szMax, sizeof(szMax), "%5.1f", max[i]);
-		FormatEx(szAirtime, sizeof(szAirtime), "%7.1f", airtime);
+		FormatEx(szAirtime, sizeof(szAirtime), "%7i", airtime);
 		FormatEx(szOverlap, sizeof(szOverlap), "%3i", overlap[i]);
 		FormatEx(szDead, sizeof(szDead), "%3i", deadAirtime[i]);
+		FormatEx(szAvgGain, sizeof(szAvgGain), "%3.2f", avgGain);
 		
-		Format(strafeStats, sizeof(strafeStats), "%s%i.  %s%s  %s  %s    %s  %s%s %s %s\n",
-			strafeStats, i, szSync, PERCENT, szGain, szLoss, szMax, szAirtime, PERCENT, szOverlap, szDead);
+		Format(strafeStats, sizeof(strafeStats), "%s%i.  %s%s  %s  %s    %s  %s %s %s       %s\n",
+			strafeStats, i, szSync, PERCENT, szGain, szLoss, szMax, szAirtime, szOverlap, szDead, szAvgGain);
 	}
 	
 	PrintToConsole(client, strafeStats);
@@ -162,7 +168,7 @@ void FormatAirtime(char[] buffer, int maxlen, int airTime)
 void FormatSync(char[] buffer, int maxlen, int iSync, int airTime)
 {
 	float sync = (iSync + 0.0) / (airTime + 0.0) * 100.0;
-	FormatEx(buffer, maxlen, "Sync: %.1f%%%", sync);
+	FormatEx(buffer, maxlen, "Sync: {lime}%.1f%%%{grey}", sync);
 }
 
 void FormatHeight(int client, char[] buffer, int maxlen)
@@ -199,7 +205,7 @@ void FormatBlockDistance(char[] buffer, int maxlen, float fBlockDist)
 {
 	if (IsFloatInRange(fBlockDist, g_fMinJumpDistance, g_fMaxJumpDistance))
 	{
-		FormatEx(buffer, maxlen, "| Block: {default}%i{grey} ", RoundFloat(fBlockDist));
+		FormatEx(buffer, maxlen, "Block: {default}%i{grey} | ", RoundFloat(fBlockDist));
 	}
 }
 
@@ -207,7 +213,7 @@ void FormatEdge(int client, char[] buffer, int maxlen)
 {
 	if (g_fJEdge[client] >= 0.0 && g_fJEdge[client] < MAXEDGE)
 	{
-		FormatEx(buffer, maxlen, "| Edge: {default}%.3f{grey} ", g_fJEdge[client]);
+		FormatEx(buffer, maxlen, "Edge: {default}%.3f{grey} | ", g_fJEdge[client]);
 	}
 }
 
@@ -216,7 +222,25 @@ void FormatOverlap(char[] buffer, int maxlen, int overlap)
 	FormatEx(buffer, maxlen, "OL: {lime}%i{grey}", overlap);
 }
 
-void FormatDeadAirtime(char[] buffer, maxlen, int deadAirtime)
+void FormatDeadAirtime(char[] buffer, int maxlen, int deadAirtime)
 {
 	FormatEx(buffer, maxlen, "DA: {lime}%i{grey}", deadAirtime);
+}
+
+void FormatDeviation(char[] buffer, int maxlen, const float fJumpGround[3], float fLandGround[3])
+{
+	float fDeviation;
+	float fXDeviation = FloatAbs(fJumpGround[0] - fLandGround[0]);
+	float fYDeviation = FloatAbs(fJumpGround[1] - fLandGround[1]);
+	
+	if (fXDeviation > fYDeviation)
+	{
+		fDeviation = fYDeviation;
+	}
+	else
+	{
+		fDeviation = fXDeviation;
+	}
+	
+	FormatEx(buffer, maxlen, "Deviation: {lime}%.3f{grey}", fDeviation);
 }

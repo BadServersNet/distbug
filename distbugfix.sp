@@ -1,6 +1,7 @@
 #include <sourcemod>
 #include <sdktools>
 #include <sdkhooks>
+#include <clientprefs>
 
 #include <colors>
 #include <distbugfix/stocks>
@@ -8,24 +9,34 @@
 #define EPSILON		0.000001
 #define MAXEDGE		32.0
 #define MAXSTRAFES	32
-#define PREFIX		"\x01[\x05GC\x01]"
+#define PREFIX		"{default}[{olive}GC{default}]"
 #define PERCENT		"%%"
+#define MAX_COOKIE_SIZE			32
+#define FL_SETTINGS_OFF			0
+#define FL_SETTINGS_ENABLED		(1 << 0)
+#define FL_SETTINGS_STRAFESTATS	(1 << 1)
 
 #include "distbugfix/globalvars.sp"
 #include "distbugfix/helpers.sp"
 #include "distbugfix/chatreporting.sp"
+#include "distbugfix/clientprefs.sp"
 
 public Plugin myinfo = 
 {
 	name = "Distance Bug Fix", 
 	author = "GameChaos", 
 	description = "Fixes longjump distance bug", 
-	version = "1.01"
+	version = "1.02"
 };
+
+public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
+{
+	g_bLateLoad = late;
+}
 
 public void OnPluginStart()
 {
-	g_fTickRate = 1 / GetTickInterval();
+	g_fTickRate = 1.0 / GetTickInterval();
 	RegConsoleCmd("sm_distbug", Command_Distbug);
 	RegConsoleCmd("sm_strafestats", Command_StrafeStats);
 	
@@ -39,12 +50,13 @@ public void OnPluginStart()
 	
 	AutoExecConfig(true, "distbugfix");
 	
-	g_hGravity = FindConVar("sv_gravity");
-	HookConVarChange(g_hGravity, OnConvarChanged);
-	
-	if (g_hGravity != INVALID_HANDLE)
+	OnPluginStart_Clientprefs();
+	if (g_bLateLoad)
 	{
-		g_fTickGravity = GetConVarFloat(g_hGravity) / g_fTickRate;
+		for (int client = 1; client < MaxClients; client++)
+		{
+			OnClientCookiesCached(client);
+		}
 	}
 }
 
@@ -58,12 +70,6 @@ public void OnConvarChanged(Handle convar, const char[] oldValue, const char[] n
 	if(convar == g_hMaxJumpDistance)
 	{
 		g_fMaxJumpDistance = StringToFloat(newValue[0]);
-	}
-	
-	
-	if(convar == g_hGravity)
-	{
-		g_fTickGravity = StringToFloat(newValue[0]) / g_fTickRate;
 	}
 }
 
@@ -86,46 +92,57 @@ public void OnClientConnected(int client)
 	g_iLastButtons[client] = 0;
 	
 	g_bValidJump[client] = false;
-	g_bDistbug[client] = false;
-	g_bStrafeStats[client] = false;
+	
+	g_fAirDistance[client] = 0.0;
 	
 	ResetStatStrafeVars(client);
 }
 
+public void OnClientCookiesCached(int client)
+{
+	OnClientCookiesCached_Clientprefs(client);
+}
+
+// ======
 // ACTION
+// ======
 
 public Action Command_Distbug(int client, int args)
 {
-	g_bDistbug[client] = !g_bDistbug[client];
-	if (g_bStrafeStats[client])
+	g_iSettings[client] ^= FL_SETTINGS_ENABLED;
+	SaveClientCookie(client, g_iSettings[client]);
+	
+	if (g_iSettings[client] & FL_SETTINGS_STRAFESTATS)
 	{
-		CPrintToChat(client, "%s Distbug has been %s", PREFIX, g_bDistbug[client] ? "enabled. Type !strafestats to turn strafestats off." : "disabled.");
+		CPrintToChat(client, "%s Distbug has been %s", PREFIX, (g_iSettings[client] & FL_SETTINGS_ENABLED) ? "enabled. Type !strafestats to turn strafestats off." : "disabled.");
 	}
 	else
 	{
-		CPrintToChat(client, "%s Distbug has been %s", PREFIX, g_bDistbug[client] ? "enabled. Type !strafestats to turn strafestats on." : "disabled.");
+		CPrintToChat(client, "%s Distbug has been %s", PREFIX, (g_iSettings[client] & FL_SETTINGS_ENABLED) ? "enabled. Type !strafestats to turn strafestats on." : "disabled.");
 	}
+	
 	return Plugin_Handled;
 }
 
 public Action Command_StrafeStats(int client, int args)
 {
-	if (g_bDistbug[client])
+	if (g_iSettings[client] & FL_SETTINGS_ENABLED)
 	{
-		g_bStrafeStats[client] = !g_bStrafeStats[client];
-		CPrintToChat(client, "%s Strafe stats have been %s.", PREFIX, g_bStrafeStats[client] ? "turned on" : "turned off");
+		g_iSettings[client] ^= FL_SETTINGS_STRAFESTATS;
+		SaveClientCookie(client, g_iSettings[client]);
+		CPrintToChat(client, "%s Strafe stats have been %s.", PREFIX, (g_iSettings[client] & FL_SETTINGS_STRAFESTATS) ? "turned on" : "turned off");
 	}
 	return Plugin_Handled;
 }
 
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2])
 {
-	if (!IsPlayerAlive(client) || !IsValidClient(client) || !g_bDistbug[client])
+	if (!IsPlayerAlive(client) || !IsValidClient(client) || !(g_iSettings[client] & FL_SETTINGS_ENABLED))
 	{
 		return Plugin_Continue;
 	}
 	
-	g_bInAir[client] = GetEntityMoveType(client) != MOVETYPE_NOCLIP && GetEntityMoveType(client) != MOVETYPE_LADDER;
+	g_bInAir[client] = (GetEntityMoveType(client) == MOVETYPE_WALK) && !(GetEntityFlags(client) & FL_ONGROUND);
 	GetClientAbsOrigin(client, g_fPosition[client])
 	GetEntPropVector(client, Prop_Data, "m_vecVelocity", g_fVelocity[client]);
 	
@@ -142,9 +159,12 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		{
 			g_bValidJump[client] = true;
 			g_fMaxHeight[client] = -99999.0;
+			g_fAirDistance[client] = 0.0;
 			g_iJumpFrame[client] = GetGameTickCount();
 			g_fJumpPosition[client] = g_fPosition[client];
+			g_fAirDistance[client] += GetVectorHorLength(g_fVelocity[client]) * GetTickInterval();
 		}
+		
 		if (g_bValidJump[client] && g_iFramesOnGround[client] == 1)
 		{
 			OnJumpLand(client);
@@ -153,6 +173,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 			g_fLastVelInAir[client] = NULL_VECTOR;
 			g_bBlock[client] = false;
 		}
+		
 		g_iFramesInAir[client] = 0;
 		g_iDeadAirtime[client] = 0;
 		g_iFramesOverlapped[client] = 0;
@@ -165,12 +186,11 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 	// LAST
 	g_fLastVelocity[client] = g_fVelocity[client];
 	g_iLastButtons[client] = buttons;
+	
 	return Plugin_Changed;
 }
 
-
 // var setter
-
 void ResetStatStrafeVars(int client)
 {
 	for (int i = 0; i < MAXSTRAFES; i++)
@@ -187,33 +207,38 @@ void ResetStatStrafeVars(int client)
 	g_iStatSync[client] = 0;
 }
 
-// set vars
+// ========
+// SET VARS
+// ========
 
 void SetFailStatVars(int client)
 {
-	if (!IsFailstat(g_fPosition[client][2], g_fJumpPosition[client][2], -g_fVelocity[client][2] / g_fTickRate + 1.0))
+	if (!(g_fPosition[client][2] > g_fJumpPosition[client][2]
+	 && g_fPosition[client][2] <= g_fJumpPosition[client][2] - g_fVelocity[client][2] / g_fTickRate + EPSILON))
 	{
 		return;
 	}
 	
-	g_fFailStatStrafeGain[client] = g_fStatStrafeGain[client];
-	g_fFailStatStrafeLoss[client] = g_fStatStrafeLoss[client];
-	g_fFailStatStrafeMax[client] = g_fStatStrafeMax[client];
-	g_fFailStatStrafeSync[client] = g_fStatStrafeSync[client];
-	g_fFailStatStrafeAirtime[client] = g_fStatStrafeAirtime[client];
-	g_fFailPos[client] = g_fPosition[client];
-	g_fFailVelocity[client] = g_fVelocity[client];
-	g_iFailStatSync[client] = g_iStatSync[client];
-	g_iFailStatStrafeOverlap[client] = g_iStatStrafeOverlap[client];
-	g_iFailStatStrafeDead[client] = g_iStatStrafeDead[client];
-	g_iFailStatStrafeCount[client] = g_iStatStrafeCount[client];
-	g_iFailAirTime[client] = g_iFramesInAir[client];
-	g_iFailDeadAirTime[client] = g_iDeadAirtime[client];
-	g_iFailOverlap[client] = g_iFramesOverlapped[client];
+	g_fFailStatStrafeGain[client]		= g_fStatStrafeGain[client];
+	g_fFailStatStrafeLoss[client]		= g_fStatStrafeLoss[client];
+	g_fFailStatStrafeMax[client]		= g_fStatStrafeMax[client];
+	g_fFailStatStrafeSync[client]		= g_fStatStrafeSync[client];
+	g_fFailStatStrafeAirtime[client]	= g_fStatStrafeAirtime[client];
+	g_fFailPos[client]					= g_fPosition[client];
+	g_fFailVelocity[client]				= g_fVelocity[client];
+	g_fFailAirDistance[client]			= g_fAirDistance[client] - GetVectorHorLength(g_fVelocity[client]) * GetTickInterval();
+	g_iFailStatSync[client]				= g_iStatSync[client];
+	g_iFailStatStrafeOverlap[client]	= g_iStatStrafeOverlap[client];
+	g_iFailStatStrafeDead[client]		= g_iStatStrafeDead[client];
+	g_iFailStatStrafeCount[client]		= g_iStatStrafeCount[client];
+	g_iFailAirTime[client]				= g_iFramesInAir[client];
+	g_iFailDeadAirTime[client]			= g_iDeadAirtime[client];
+	g_iFailOverlap[client]				= g_iFramesOverlapped[client];
 }
 
-// important
-
+// =========
+// IMPORTANT
+// =========
 void OnPlayerInAir(int client, int &buttons, float vel[3])
 {
 	g_iFramesOnGround[client] = 0;
@@ -224,14 +249,8 @@ void OnPlayerInAir(int client, int &buttons, float vel[3])
 		return;
 	}
 	
-	if (IsFailstat(g_fPosition[client][2], g_fJumpPosition[client][2], -g_fVelocity[client][2] / g_fTickRate + 1.0))
-	{
-		float angles[3];
-		GetClientAbsAngles(client, angles);
-	}
-	
-	float speed = GetVectorHorLength(g_fVelocity[client]);
-	float lastspeed = GetVectorHorLength(g_fLastVelocity[client]);
+	float fSpeed = GetVectorHorLength(g_fVelocity[client]);
+	float fLastSpeed = GetVectorHorLength(g_fLastVelocity[client]);
 	
 	if (IsOverlapping(buttons))
 		g_iFramesOverlapped[client]++;
@@ -239,23 +258,33 @@ void OnPlayerInAir(int client, int &buttons, float vel[3])
 	if (IsDeadAirtime(buttons))
 		g_iDeadAirtime[client]++;
 	
-	if (IsStrafeSynced(speed, lastspeed))
+	if (IsStrafeSynced(fSpeed, fLastSpeed))
 		g_iStatSync[client]++;
 	
 	CheckMaxHeight(client);
-	CheckStrafeStats(client, buttons, vel, speed, lastspeed);
+	CheckStrafeStats(client, buttons, vel, fSpeed, fLastSpeed);
+	
+	g_fAirDistance[client] += GetVectorHorLength(g_fVelocity[client]) * GetTickInterval();
 	
 	SetFailStatVars(client);
 	
-	g_fLastLastPosInAir[client] = g_fLastPosInAir[client];
-	g_fLastVelocityInAir[client] = g_fVelocity[client];
-	g_fLastPosInAir[client] = g_fPosition[client];
-	g_fLastVelInAir[client] = vel;
+	CopyVector(g_fLastPosInAir[client], g_fLastLastPosInAir[client]);
+	CopyVector(g_fVelocity[client], g_fLastVelocityInAir[client]);
+	CopyVector(g_fPosition[client], g_fLastPosInAir[client]);
+	CopyVector(vel, g_fLastVelInAir[client]);
 }
 
 void OnJumpLand(int client)
 {
-	float fOffset = GetOffset(client, false);
+	// check rough offset
+	if (g_fPosition[client][2] - g_fJumpPosition[client][2] > 2.0)
+	{
+		return;
+	}
+	
+	float fJumpGround[3];
+	float fLandGround[3];
+	float fOffset = GetOffset(client, fJumpGround, fLandGround, false);
 	
 	if (fOffset > EPSILON)
 	{
@@ -274,12 +303,16 @@ void OnJumpLand(int client)
 	char szEdge[32];
 	FormatEdge(client, szEdge, sizeof(szEdge));
 	
-	if (fOffset < -EPSILON)
+	float fAddedDistance;
+	// failstat
+	if (fOffset < 0.0)
 	{
-		float failDist = CalcFailDistance(g_fJumpPosition[client], g_fFailPos[client], g_fFailVelocity[client]);
+		float fFailDist = CalcFailDistance(g_fJumpPosition[client], g_fFailPos[client], g_fFailVelocity[client], fLandGround);
+		fAddedDistance = GetVectorHorDistance(g_fFailPos[client], fLandGround);
+		g_fFailAirDistance[client] += fAddedDistance;
 		
-		char szFailDist[32];
-		FormatFailDist(szFailDist, sizeof(szFailDist), failDist);
+		char szFailDist[40];
+		FormatFailDist(szFailDist, sizeof(szFailDist), fFailDist);
 		
 		char szAirtime[32];
 		FormatAirtime(szAirtime, sizeof(szAirtime), g_iFailAirTime[client]);
@@ -287,28 +320,39 @@ void OnJumpLand(int client)
 		char szSync[32];
 		FormatSync(szSync, sizeof(szSync), g_iFailStatSync[client], g_iFailAirTime[client]);
 		
-		char szBlockdist[32];
-		FormatBlockDistance(szBlockdist, sizeof(szBlockdist), fBlockDist);
-		
 		char szOverlap[32];
-		FormatOverlap(szOverlap, sizeof(szOverlap), g_iFramesOverlapped[client]);
+		FormatOverlap(szOverlap, sizeof(szOverlap), g_iFailOverlap[client]);
 		
 		char szDeadAirtime[32];
-		FormatDeadAirtime(szDeadAirtime, sizeof(szDeadAirtime), g_iDeadAirtime[client]);
+		FormatDeadAirtime(szDeadAirtime, sizeof(szDeadAirtime), g_iFailDeadAirTime[client]);
 		
-		PrintFailStat(client, szFailDist, szEdge, szBlockdist, szJumpHeight, szSync, szAirtime, szWRelease, szOverlap, szDeadAirtime);
+		char szDeviation[32];
+		FormatDeviation(szDeviation, sizeof(szDeviation), fJumpGround, fLandGround);
+		
+		PrintFailStat(client, szFailDist, szEdge, szJumpHeight, szSync, szAirtime, szWRelease, szOverlap, szDeadAirtime, szDeviation);
 	}
+	// not failstat
 	else
 	{
-		float distance = CalcJumpDistance(client);
+		if (!IsOffset(fJumpGround[2], g_fPosition[client][2], EPSILON))
+		{
+			fAddedDistance = GetVectorHorDistance(g_fLastPosInAir[client], fLandGround);
+			fAddedDistance -= GetVectorHorLength(g_fLastVelocity[client]) * GetTickInterval();
+		}
+		else
+		{
+			fAddedDistance = GetVectorHorDistance(g_fPosition[client], fLandGround);
+		}
+		g_fAirDistance[client] += fAddedDistance;
+		float fDistance = CalcJumpDistance(g_fJumpPosition[client], fLandGround);
 		
-		if (!IsFloatInRange(distance, g_fMinJumpDistance, g_fMaxJumpDistance))
+		if (!IsFloatInRange(fDistance, g_fMinJumpDistance, g_fMaxJumpDistance))
 		{
 			return;
 		}
 		
-		char szDist[32];
-		FormatDist(szDist, sizeof(szDist), distance);
+		char szDist[40];
+		FormatDist(szDist, sizeof(szDist), fDistance);
 		
 		char szAirtime[32];
 		FormatAirtime(szAirtime, sizeof(szAirtime), g_iFramesInAir[client]);
@@ -325,118 +369,105 @@ void OnJumpLand(int client)
 		char szDeadAirtime[32];
 		FormatDeadAirtime(szDeadAirtime, sizeof(szDeadAirtime), g_iDeadAirtime[client]);
 		
-		PrintJumpstat(client, szDist, szEdge, szBlockdist, szJumpHeight, szSync, szAirtime, szWRelease, szOverlap, szDeadAirtime);
+		char szDeviation[32];
+		FormatDeviation(szDeviation, sizeof(szDeviation), fJumpGround, fLandGround);
+		
+		PrintJumpstat(client, szDist, szEdge, szBlockdist, szJumpHeight, szSync, szAirtime, szWRelease, szOverlap, szDeadAirtime, szDeviation);
 	}
 	
 	g_bValidJump[client] = false;
 }
 
-/*
- * Get z offset of current jump
- */
-
-float GetOffset(int client, bool optimised = true)
+// Get z offset of current jump
+float GetOffset(int client, float jumpGround[3], float landGround[3], bool optimised = true)
 {
-	float jumpground[3];
-	float landground[3];
+	TraceGround(client, g_fJumpPosition[client], jumpGround);
 	
-	TraceGround(client, g_fJumpPosition[client], jumpground);
-	
+	// a tiny bit faster i guess
 	if (optimised)
 	{
-		TraceGround(client, g_fPosition[client], landground);
+		if (!TraceGround(client, g_fPosition[client], landGround))
+		{
+			return -99999.9;
+		}
 	}
 	else
 	{
-		float tempPos[3];
-		float tickGravity;
-		
-		tempPos = g_fPosition[client];
-		
-		if (!IsFloatInRange(g_fPosition[client][2] - g_fJumpPosition[client][2], -EPSILON, EPSILON))
+		float fTempPos[3];
+		bool bBugged;
+		if (!IsOffset(g_fPosition[client][2], g_fJumpPosition[client][2], EPSILON))
 		{
-			tickGravity = g_fTickGravity;
-			tempPos = g_fLastPosInAir[client];
+			CopyVector(g_fLastPosInAir[client], fTempPos);
+			bBugged = true;
+		}
+		else
+		{
+			CopyVector(g_fPosition[client], fTempPos);
+			bBugged = false;
 		}
 		
-		TraceLandPos(client, tempPos, g_fLastVelocity[client], landground, tickGravity);
+		if (!TraceLandPos(client, fTempPos, g_fLastVelocity[client], landGround, bBugged))
+		{
+			return -99999.9;
+		}
 	}
 	
-	return landground[2] - jumpground[2];
+	return landGround[2] - jumpGround[2];
 }
 
 float GetBlockDist(int client, float position[3], float jumpPosition[3])
 {
-	float blockdist;
-	float endEdge[3];
-	float startEdge[3];
-	int blockDir = BlockDirection(jumpPosition, position);
+	float fBlockDist;
+	float fEndEdge[3];
+	float fStartEdge[3];
+	int iBlockDir = BlockDirection(jumpPosition, position);
 	
-	float pos2[3];
+	float fPos2[3];
 	position[2] = jumpPosition[2];
 	
-	pos2 = position;
-	pos2[2] = jumpPosition[2] + 1.0;
-	pos2[blockDir] += (jumpPosition[blockDir] - position[blockDir]) / 2.0;
-	g_bBlock[client] = TraceBlock(pos2, jumpPosition, startEdge);
+	fPos2 = position;
+	fPos2[2] = jumpPosition[2] + 1.0;
+	fPos2[iBlockDir] += (jumpPosition[iBlockDir] - position[iBlockDir]) / 2.0;
+	g_bBlock[client] = TraceBlock(fPos2, jumpPosition, fStartEdge);
 	
-	pos2 = jumpPosition;
-	pos2[2] += 1.0;
-	pos2[blockDir] += (position[blockDir] - jumpPosition[blockDir]) / 2.0;
-	g_bBlock[client] = TraceBlock(pos2, position, endEdge);
+	fPos2 = jumpPosition;
+	fPos2[2] += 1.0;
+	fPos2[iBlockDir] += (position[iBlockDir] - jumpPosition[iBlockDir]) / 2.0;
+	g_bBlock[client] = TraceBlock(fPos2, position, fEndEdge);
 	
-	blockdist = FloatAbs(endEdge[blockDir] - startEdge[blockDir]) + 32.0625;
-	if (startEdge[blockDir] - pos2[blockDir] != 0.0)
+	fBlockDist = FloatAbs(fEndEdge[iBlockDir] - fStartEdge[iBlockDir]) + 32.0625;
+	if (fStartEdge[iBlockDir] - fPos2[iBlockDir] != 0.0)
 	{
-		g_fJEdge[client] = FloatAbs(jumpPosition[blockDir] - RoundFloat(startEdge[blockDir]));
+		g_fJEdge[client] = FloatAbs(jumpPosition[iBlockDir] - RoundFloat(fStartEdge[iBlockDir]));
 	}
 	else
 	{
 		g_fJEdge[client] = -1.0;
 	}
-	return blockdist;
+	return fBlockDist;
 }
 
 // calculator
 
-float CalcFailDistance(float jumpPosition[3], float position[3], float velocity[3])
+float CalcFailDistance(const float jumpPosition[3], const float position[3], const float velocity[3], float landPos[3])
 {
-	float linePoint[3];
-	float lineDirection[3];
-	float planePoint[3];
-	float planeNormal[3];
-	float realLandingPos[3];
+	float fLinePoint[3];
+	float fLineDirection[3];
+	float fPlanePoint[3];
 	
-	linePoint = position;
-	lineDirection = velocity;
+	CopyVector(position, fLinePoint);
+	NormalizeVector(velocity, fLineDirection);
+	CopyVector(jumpPosition, fPlanePoint);
 	
-	planePoint = jumpPosition;
+	float fPlaneNormal[3];
+	fPlaneNormal[2] = 1.0;
 	
-	planeNormal[2] = 1.0;
+	lineIntersection(fPlanePoint, fPlaneNormal, fLinePoint, fLineDirection, landPos);
 	
-	lineIntersection(planePoint, planeNormal, linePoint, lineDirection, realLandingPos);
-	
-	return GetVectorHorDistance(jumpPosition, realLandingPos) + 32.0;
+	return GetVectorHorDistance(jumpPosition, landPos) + 32.0;
 }
 
-// calculator
-
-float CalcJumpDistance(int client)
+float CalcJumpDistance(const float jumpPosition[3], const float landPosition[3])
 {
-	float realLandPos[3];
-	
-	// is jump bugged?
-	if (!IsOffset(g_fPosition[client][2], g_fJumpPosition[client][2], EPSILON))
-	{
-		if (TraceLandPos(client, g_fLastPosInAir[client], g_fLastVelocity[client], realLandPos, g_fTickGravity))
-		{
-			return GetVectorHorDistance(g_fJumpPosition[client], realLandPos) + 32.0;
-		}
-	}
-	
-	if (TraceLandPos(client, g_fPosition[client], g_fLastVelocity[client], realLandPos, 0.0))
-	{
-		return GetVectorHorDistance(g_fJumpPosition[client], realLandPos) + 32.0;
-	}
-	return -1.0;
+	return GetVectorHorDistance(jumpPosition, landPosition) + 32.0;
 }
