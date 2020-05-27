@@ -43,7 +43,8 @@ enum Colors
 }
 
 /* Colors' properties */
-new String:CTag[][] = {"{default}", "{darkred}", "{green}", "{lightgreen}", "{orange}", "{blue}", "{olive}", "{lime}", "{red}", "{purple}", "{grey}", "{yellow}", "{lightblue}", "{steelblue}", "{darkblue}", "{pink}", "{lightred}"};
+// {"{default}", "{darkred}", "{green}", "{lightgreen}", "{orange}", "{blue}", "{olive}", "{lime}", "{red}", "{purple}", "{grey}", "{yellow}", "{lightblue}", "{steelblue}", "{darkblue}", "{pink}", "{lightred}"};
+new String:CTag[][] = {"{d}", "{dr}", "{gr}", "{lg}", "{o}", "{b}", "{ol}", "{l}", "{r}", "{p}", "{g}", "{y}", "{lb}", "{sb}", "{db}", "{pi}", "{lr}"};
 new String:CTagCode[][] = {"\x01", "\x02", "\x04", "\x03", "\x03", "\x03", "\x05", "\x06", "\x07", "\x03", "\x08", "\x09","\x0A","\x0B","\x0C","\x0E","\x0F"};
 new bool:CTagReqSayText2[] = {false, false, false, true, true, true, false, false, false, false, false, false, false, false, false, false, false};
 new bool:CEventIsHooked = false;
