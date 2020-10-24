@@ -1,16 +1,17 @@
 
-**v2.0.0 Changelog**
+**v1.1.0 Changelog**
 
-07.04.2020
+27.05.2020
 
 Additions:
 
 - Added a Prestrafe and Max stat.
+- Added a version command: `sm_distbugversion`
 
 Fixes and changes:
 
 - Rewrote everything.
-- Changed "Air" distance stat to show the airpath straightness. 1.0 is completely straight, more is worse airpath.
+- Changed "Air" distance stat to show the airpath straightness. 1.0 is completely straight, more than 1.0 is bad.
 
 **v1.02 Changelog**
 

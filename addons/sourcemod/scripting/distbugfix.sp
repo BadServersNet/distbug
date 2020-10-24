@@ -11,11 +11,15 @@
 
 #define CHAT_PREFIX			"{d}[{l}GC{d}]"
 #define CHAT_SEPARATOR		"{g}|"
-#define DISTBUG_VERSION		"1.1.0"
+#define DISTBUG_VERSION		"1.2.0"
 
 #define MAX_COOKIE_SIZE		32
 #define MAX_EDGE			32.0
-#define MAX_STRAFES			17
+#define MAX_STRAFES			14
+
+#define FLOAT_NAN               view_as<float>(0xffffffff)
+#define FLOAT_INFINITY          view_as<float>(0x7f800000)
+#define FLOAT_NEGATIVE_INFINITY view_as<float>(0xff800000)
 
 enum
 {
@@ -72,6 +76,9 @@ enum struct Jump
 	int strafeOverlap[MAX_STRAFES];
 	int strafeDeadair[MAX_STRAFES];
 	float strafeAvgGain[MAX_STRAFES];
+	float strafeAvgEfficiency[MAX_STRAFES];
+	int strafeEfficiencyCount[MAX_STRAFES];
+	float strafePeakEfficiency[MAX_STRAFES];
 	
 	void Reset()
 	{
@@ -107,6 +114,9 @@ enum struct Jump
 			this.strafeOverlap[i] = 0;
 			this.strafeDeadair[i] = 0;
 			this.strafeAvgGain[i] = 0.0;
+			this.strafeAvgEfficiency[i] = 0.0;
+			this.strafeEfficiencyCount[i] = 0;
+			this.strafePeakEfficiency[i] = FLOAT_INFINITY;
 		}
 	}
 }
@@ -116,6 +126,7 @@ enum struct PlayerData
 	Jump jump;
 	float origin[3];
 	float velocity[3];
+	float angles[3];
 	float lastNoduckOrigin[3];
 	float lastVelocity[3];
 	float jumpOrigin[3];
@@ -133,6 +144,7 @@ enum struct PlayerData
 		this.jump.Reset();
 		this.origin = NULL_VECTOR;
 		this.velocity = NULL_VECTOR;
+		this.angles = NULL_VECTOR;
 		this.lastNoduckOrigin = NULL_VECTOR;
 		this.lastVelocity = NULL_VECTOR;
 		this.jumpOrigin = NULL_VECTOR;

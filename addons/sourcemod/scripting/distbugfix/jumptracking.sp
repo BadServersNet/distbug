@@ -49,6 +49,7 @@ void OnPlayerRunCmdPost_JumpTracking(int client, const float vel[3])
 	
 	GetClientAbsOrigin(client, playerData[client].origin);
 	GetClientVelocity(client, playerData[client].velocity);
+	GetClientEyeAngles(client, playerData[client].angles);
 	
 	playerData[client].buttons = GetClientButtons(client);
 	playerData[client].buttonReleased = GetClientButtonReleased(client);
@@ -276,6 +277,20 @@ static void TrackJump(PlayerData pd)
 			pd.jump.strafeLoss[strafe] += lastSpeed - speed;
 		}
 		
+		if (lastSpeed > 0.0 && (pd.vel[0] || pd.vel[1]))
+		{
+			float velocityYaw = RadToDeg(ArcTangent2(pd.lastVelocity[1], pd.lastVelocity[0]));
+			float wishSpeedYaw = RadToDeg(ArcTangent2(-pd.vel[1], pd.vel[0])); // have to negate y axis, i don't know why, but it makes hsw work.
+			
+			float efficiency = FloatAbs(NormaliseAngle((pd.angles[1] + wishSpeedYaw) - velocityYaw)) - 90.0;
+			pd.jump.strafeAvgEfficiency[strafe] += efficiency;
+			if (FloatAbs(efficiency) < FloatAbs(pd.jump.strafePeakEfficiency[strafe]))
+			{
+				pd.jump.strafePeakEfficiency[strafe] = efficiency;
+			}
+			pd.jump.strafeEfficiencyCount[strafe]++;
+		}
+		
 		if (speed > pd.jump.strafeMax[strafe])
 		{
 			pd.jump.strafeMax[strafe] = speed;
@@ -297,10 +312,20 @@ static void TrackJump(PlayerData pd)
 
 static void FinishJumpTracking(PlayerData pd)
 {
-	for (int strafe; strafe < pd.jump.strafes; strafe++)
+	for (int strafe; strafe < pd.jump.strafes + 1; strafe++)
 	{
 		// average gain
 		pd.jump.strafeAvgGain[strafe] = pd.jump.strafeGain[strafe] / pd.jump.strafeAirtime[strafe];
+		
+		// efficiency!
+		if (pd.jump.strafeEfficiencyCount[strafe])
+		{
+			pd.jump.strafeAvgEfficiency[strafe] = pd.jump.strafeAvgEfficiency[strafe] / float(pd.jump.strafeEfficiencyCount[strafe]);
+		}
+		else
+		{
+			pd.jump.strafeAvgEfficiency[strafe] = FLOAT_NAN;
+		}
 		
 		// sync
 		if (pd.jump.strafeAirtime[strafe] != 0.0)
@@ -538,31 +563,82 @@ void PrintJumpstat(int client, PlayerData pd)
 		deadair);
 	
 	CPrintToChat(client, chatStats);
-	CRemoveTags(chatStats, sizeof chatStats);
-	PrintToConsole(client, chatStats);
 	
-	if (!IsSettingEnabled(client, FL_SETTINGS_STRAFESTATS))
+	char consoleStats[768];
+	strcopy(consoleStats, sizeof consoleStats, chatStats);
+	CRemoveTags(consoleStats, sizeof consoleStats);
+	PrintToConsole(client, consoleStats);
+	
+	char strafestats[2048];
+	if (IsSettingEnabled(client, FL_SETTINGS_STRAFESTATS))
+	{
+		FormatEx(strafestats, sizeof strafestats, " #.  Sync   Gain   Loss  Max   Air  OL  DA  AvgGain  Efficiency (avg & peak)\n");
+		
+		for (int strafe; strafe <= pd.jump.strafes && strafe < MAX_STRAFES; strafe++)
+		{
+			Format(strafestats, sizeof strafestats, "%s%2i. %5.1f%% %6.2f %6.2f  %5.1f %3i %3i %3i  %3.2f     %5.2f (%5.2f)\n",
+				strafestats,
+				strafe + 1,
+				pd.jump.strafeSync[strafe],
+				pd.jump.strafeGain[strafe],
+				pd.jump.strafeLoss[strafe],
+				pd.jump.strafeMax[strafe],
+				pd.jump.strafeAirtime[strafe],
+				pd.jump.strafeOverlap[strafe],
+				pd.jump.strafeDeadair[strafe],
+				pd.jump.strafeAvgGain[strafe],
+				pd.jump.strafeAvgEfficiency[strafe],
+				pd.jump.strafePeakEfficiency[strafe]);
+		}
+		
+		PrintToConsole(client, strafestats);
+	}
+	
+	// echo to spectators
+	if (IsNullString(chatStats) &&
+		IsNullString(strafestats))
 	{
 		return;
 	}
 	
-	char strafestats[2048];
-	FormatEx(strafestats, sizeof strafestats, " #.   Sync    Gain   Loss     Max  Air  OL  DA   Avg Gain\n");
-	
-	for (int strafe; strafe <= pd.jump.strafes && strafe < MAX_STRAFES; strafe++)
+	for (int i = 1; i <= MaxClients; i++)
 	{
-		Format(strafestats, sizeof strafestats, "%s%2i.  %5.1f%%  %6.2f %6.2f   %5.1f  %3i %3i %3i   %3.2f\n",
-			strafestats,
-			strafe + 1,
-			pd.jump.strafeSync[strafe],
-			pd.jump.strafeGain[strafe],
-			pd.jump.strafeLoss[strafe],
-			pd.jump.strafeMax[strafe],
-			pd.jump.strafeAirtime[strafe],
-			pd.jump.strafeOverlap[strafe],
-			pd.jump.strafeDeadair[strafe],
-			pd.jump.strafeAvgGain[strafe]);
+		if (i == client || !IsValidClientExt(i) || !IsClientObserver(i))
+		{
+			continue;
+		}
+		
+		// Check if spectating client
+		if (GetEntPropEnt(i, Prop_Send, "m_hObserverTarget") != client)
+		{
+			continue;
+		}
+		
+		int specMode = GetEntProp(i, Prop_Send, "m_iObserverMode");
+		// 4 = 1st person, 5 = 3rd person
+		if (specMode != 4 && specMode != 5)
+		{
+			continue;
+		}
+		
+		if (!IsSettingEnabled(client, FL_SETTINGS_ENABLED))
+		{
+			continue;
+		}
+		
+		if (!IsNullString(chatStats))
+		{
+			CPrintToChat(i, "%s", chatStats);
+		}
+		
+		if (!IsNullString(consoleStats))
+		{
+			PrintToConsole(i, "%s", consoleStats);
+		}
+		
+		if (!IsNullString(strafestats))
+		{
+			PrintToConsole(i, strafestats);
+		}
 	}
-	
-	PrintToConsole(client, strafestats);
 }
