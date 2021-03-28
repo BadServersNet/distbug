@@ -66,7 +66,6 @@ void OnPlayerRunCmdPost_JumpTracking(int client, const float vel[3])
 	
 	if (playerData[client].framesOnGround == 0)
 	{
-		TrackJump(playerData[client]);
 		// check for failstat
 		if (playerData[client].jump.validJump)
 		{
@@ -93,6 +92,7 @@ void OnPlayerRunCmdPost_JumpTracking(int client, const float vel[3])
 				OnPlayerFailStat(client, playerData[client]);
 			}
 		}
+		TrackJump(playerData[client]);
 	}
 	
 	if (playerData[client].framesOnGround == 1)
@@ -149,13 +149,13 @@ static void OnPlayerJumpLand(int client, PlayerData pd)
 	
 	float adjustedOrigin[3];
 	adjustedOrigin = pd.origin;
-	float tempVelocity[3];
+	float adjustedVelocity[3];
 	
 	// If jump is bugged i.e./or basically directly on ground (0.00001 units or less away from ground).
 	if (IsRoughlyEqual(pd.landGround[2], adjustedOrigin[2], 0.00001))
 	{
 		// Use previous tick's position and velocity if bugged
-		tempVelocity = pd.lastVelocity;
+		adjustedVelocity = pd.lastVelocity;
 		adjustedOrigin = pd.lastNoduckOrigin;
 		
 		// Compensate for ducking:
@@ -168,35 +168,15 @@ static void OnPlayerJumpLand(int client, PlayerData pd)
 		pd.jump.ljBug = true;
 	}
 	else
-	// jump is not bugged, use current tick's values.
 	{
-		tempVelocity = pd.velocity;
+		// jump is not bugged, use current tick's values.
+		adjustedVelocity = pd.velocity;
 		// fix vertical velocity being 0 on landing tick
-		tempVelocity[2] = pd.lastVelocity[2] - g_cvGravity.FloatValue * GetTickInterval();
+		adjustedVelocity[2] = pd.lastVelocity[2] - (g_cvGravity.FloatValue * GetTickInterval() * 0.5);
 		pd.jump.ljBug = false;
 	}
 	
-	ScaleVector(tempVelocity, GetTickInterval()); // get distance travelled in 1 tick.
-	
-	float tracePos[3];
-	AddVectors(adjustedOrigin, tempVelocity, tracePos);
-	
-	float mins[3];
-	float maxs[3];
-	GetClientMins(client, mins);
-	GetClientMaxs(client, maxs);
-	
-	TR_TraceHullFilter(adjustedOrigin, tracePos, mins, maxs, MASK_PLAYERSOLID, TraceEntityFilterPlayer);
-	
-	if (TR_DidHit())
-	{
-		TR_GetEndPosition(pd.jump.realLandOrigin);
-	}
-	else
-	{
-		pd.jump.realLandOrigin = adjustedOrigin;
-	}
-	
+	pd.jump.realLandOrigin = GetRealLandingOrigin(pd.landGround[2], adjustedOrigin, adjustedVelocity);
 	pd.jump.distance = GetVectorHorDistance(pd.jumpOrigin, pd.jump.realLandOrigin) + 32.0;
 	
 	FinishJumpTracking(pd);
@@ -365,7 +345,6 @@ static void FinishJumpTracking(PlayerData pd)
 		}
 		else
 		{
-			
 			float fraction = realtickDistance / tickdistance;
 			
 			float newAirpath;
@@ -423,6 +402,27 @@ static void FinishJumpTracking(PlayerData pd)
 	}
 }
 
+float[] GetRealLandingOrigin(float landGroundZ, float currentOrigin[3], float velocity[3])
+{
+	float result[3];
+	if ((currentOrigin[2] - landGroundZ) == 0.0)
+	{
+		result = currentOrigin;
+		return result;
+	}
+	
+	// this is like this because it works
+	float verticalDistance = currentOrigin[2] - (currentOrigin[2] + velocity[2] * GetTickInterval());
+	float fraction = (currentOrigin[2] - landGroundZ) / verticalDistance;
+	
+	float addDistance[3];
+	addDistance = velocity;
+	ScaleVector(addDistance, GetTickInterval() * fraction);
+	
+	AddVectors(currentOrigin, addDistance, result);
+	
+	return result;
+}
 
 // ========
 // Failstat
@@ -434,21 +434,7 @@ void OnPlayerFailStat(int client, PlayerData pd)
 	pd.landGround = pd.origin;
 	pd.landGround[2] = pd.jumpOrigin[2];
 	
-	if ((pd.origin[2] - pd.jumpOrigin[2]) == 0.0)
-	{
-		pd.jump.realLandOrigin = pd.origin;
-		return;
-	}
-	
-	float verticalDistance = pd.origin[2] - (pd.origin[2] + pd.velocity[2] * GetTickInterval());
-	float fraction = (pd.origin[2] - pd.jumpOrigin[2]) / verticalDistance;
-	
-	float addDistance[3];
-	addDistance = pd.velocity;
-	ScaleVector(addDistance, GetTickInterval() * fraction);
-	
-	AddVectors(pd.origin, addDistance, pd.jump.realLandOrigin);
-	
+	pd.jump.realLandOrigin = GetRealLandingOrigin(pd.jumpGround[2], pd.origin, pd.velocity);
 	pd.jump.distance = GetVectorHorDistance(pd.jumpOrigin, pd.jump.realLandOrigin) + 32.0;
 	
 	FinishJumpTracking(pd);
@@ -570,27 +556,27 @@ void PrintJumpstat(int client, PlayerData pd)
 	PrintToConsole(client, consoleStats);
 	
 	char strafestats[2048];
+	FormatEx(strafestats, sizeof strafestats, " #.  Sync   Gain   Loss  Max   Air  OL  DA  AvgGain  Efficiency (avg & peak)\n");
+	
+	for (int strafe; strafe <= pd.jump.strafes && strafe < MAX_STRAFES; strafe++)
+	{
+		Format(strafestats, sizeof strafestats, "%s%2i. %5.1f%% %6.2f %6.2f  %5.1f %3i %3i %3i  %3.2f     %5.2f (%5.2f)\n",
+			strafestats,
+			strafe + 1,
+			pd.jump.strafeSync[strafe],
+			pd.jump.strafeGain[strafe],
+			pd.jump.strafeLoss[strafe],
+			pd.jump.strafeMax[strafe],
+			pd.jump.strafeAirtime[strafe],
+			pd.jump.strafeOverlap[strafe],
+			pd.jump.strafeDeadair[strafe],
+			pd.jump.strafeAvgGain[strafe],
+			pd.jump.strafeAvgEfficiency[strafe],
+			pd.jump.strafePeakEfficiency[strafe]);
+	}
+	
 	if (IsSettingEnabled(client, FL_SETTINGS_STRAFESTATS))
 	{
-		FormatEx(strafestats, sizeof strafestats, " #.  Sync   Gain   Loss  Max   Air  OL  DA  AvgGain  Efficiency (avg & peak)\n");
-		
-		for (int strafe; strafe <= pd.jump.strafes && strafe < MAX_STRAFES; strafe++)
-		{
-			Format(strafestats, sizeof strafestats, "%s%2i. %5.1f%% %6.2f %6.2f  %5.1f %3i %3i %3i  %3.2f     %5.2f (%5.2f)\n",
-				strafestats,
-				strafe + 1,
-				pd.jump.strafeSync[strafe],
-				pd.jump.strafeGain[strafe],
-				pd.jump.strafeLoss[strafe],
-				pd.jump.strafeMax[strafe],
-				pd.jump.strafeAirtime[strafe],
-				pd.jump.strafeOverlap[strafe],
-				pd.jump.strafeDeadair[strafe],
-				pd.jump.strafeAvgGain[strafe],
-				pd.jump.strafeAvgEfficiency[strafe],
-				pd.jump.strafePeakEfficiency[strafe]);
-		}
-		
 		PrintToConsole(client, strafestats);
 	}
 	
@@ -608,6 +594,11 @@ void PrintJumpstat(int client, PlayerData pd)
 			continue;
 		}
 		
+		if (!IsSettingEnabled(i, FL_SETTINGS_ENABLED))
+		{
+			continue;
+		}
+		
 		// Check if spectating client
 		if (GetEntPropEnt(i, Prop_Send, "m_hObserverTarget") != client)
 		{
@@ -617,11 +608,6 @@ void PrintJumpstat(int client, PlayerData pd)
 		int specMode = GetEntProp(i, Prop_Send, "m_iObserverMode");
 		// 4 = 1st person, 5 = 3rd person
 		if (specMode != 4 && specMode != 5)
-		{
-			continue;
-		}
-		
-		if (!IsSettingEnabled(client, FL_SETTINGS_ENABLED))
 		{
 			continue;
 		}
@@ -636,7 +622,7 @@ void PrintJumpstat(int client, PlayerData pd)
 			PrintToConsole(i, "%s", consoleStats);
 		}
 		
-		if (!IsNullString(strafestats))
+		if (!IsNullString(strafestats) && IsSettingEnabled(i, FL_SETTINGS_STRAFESTATS))
 		{
 			PrintToConsole(i, strafestats);
 		}

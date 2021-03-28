@@ -11,10 +11,10 @@
 
 #define CHAT_PREFIX			"{d}[{l}GC{d}]"
 #define CHAT_SEPARATOR		"{g}|"
-#define DISTBUG_VERSION		"1.2.0"
+#define DISTBUG_VERSION		"1.2.1"
 
 #define MAX_COOKIE_SIZE		32
-#define MAX_EDGE			32.0
+#define MAX_EDGE				32.0
 #define MAX_STRAFES			14
 
 #define FLOAT_NAN               view_as<float>(0xffffffff)

@@ -33,7 +33,7 @@ stock void LineIntersection(const float planePoint[3], const float planeNormal[3
 	
 	ScaleVector(lineDir, t);
 	
-	AddVectors(linePoint, lineDirection, result);
+	AddVectors(linePoint, lineDir, result);
 }
 
 /**

@@ -1,4 +1,15 @@
 
+**v1.2.0 Changelog**
+
+24.10.2020
+
+Additions:
+
+- Added a strafe efficiency stat.
+- Added back printing stats to spectators.
+
+Example: `-0.82 ( 0.59)` The first number is the average strafe efficiency, the second is peak efficiency. The closer to 0 the better. 0 is perfect efficiency. Negative values mean that you're strafing too slowly, positive means too fast.
+
 **v1.1.0 Changelog**
 
 27.05.2020
