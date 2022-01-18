@@ -18,6 +18,7 @@ void EventPlayerJump_Jumptracking(int client)
 	
 	playerData[client].jump.validJump = true;
 	GetClientAbsOrigin(client, playerData[client].jumpOrigin);
+	GetClientEyeAngles(client, playerData[client].jumpAngles);
 	playerData[client].jump.jumpTick = GetGameTickCount();
 	
 	// Start jump tracking
@@ -400,6 +401,27 @@ static void FinishJumpTracking(PlayerData pd)
 			pd.jump.edge = -1.0;
 		}
 	}
+	
+	// jumpoff angle!
+	{
+		float airpathDir[3];
+		SubtractVectors(pd.jump.realLandOrigin, pd.jumpOrigin, airpathDir);
+		NormalizeVector(airpathDir, airpathDir);
+		
+		float airpathAngles[3];
+		GetVectorAngles(airpathDir, airpathAngles);
+		float airpathYaw = NormaliseAngle(airpathAngles[1]);
+		
+		float jumpCardinalDirection = float(RoundFloat(airpathYaw / 90.0)) * 90.0;
+		// Fix bugs with -180 to 180 transitions
+		if (FloatAbs(jumpCardinalDirection - pd.jumpAngles[1]) > 180.0)
+		{
+			jumpCardinalDirection += 360.0;
+		}
+		
+		pd.jump.jumpoffAngle = NormaliseAngle(jumpCardinalDirection - pd.jumpAngles[1]);
+	}
+	
 }
 
 float[] GetRealLandingOrigin(float landGroundZ, float currentOrigin[3], float velocity[3])
@@ -520,9 +542,12 @@ void PrintJumpstat(int client, PlayerData pd)
 	char deadair[32];
 	FormatEx(deadair, sizeof deadair, "DA: {l}%i", pd.jump.deadair);
 	
+	char jumpoffAngle[32];
+	FormatEx(jumpoffAngle, sizeof jumpoffAngle, "Jumpoff Angle: {l}%.1f°", RoundFloat(pd.jump.jumpoffAngle * 10.0) / 10.0);
+	
 	char chatStats[768];
 	FormatEx(chatStats, sizeof chatStats,
-		"%s %s: %s {g}[%s%s%s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s{g}]",
+		"%s %s: %s {g}[%s%s%s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s{g}]",
 		CHAT_PREFIX,
 		jumptype,
 		distance,
@@ -546,7 +571,9 @@ void PrintJumpstat(int client, PlayerData pd)
 		CHAT_SEPARATOR,
 		overlap,
 		CHAT_SEPARATOR,
-		deadair);
+		deadair,
+		CHAT_SEPARATOR,
+		jumpoffAngle);
 	
 	CPrintToChat(client, chatStats);
 	

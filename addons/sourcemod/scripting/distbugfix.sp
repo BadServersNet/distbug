@@ -11,7 +11,7 @@
 
 #define CHAT_PREFIX			"{d}[{l}GC{d}]"
 #define CHAT_SEPARATOR		"{g}|"
-#define DISTBUG_VERSION		"1.2.1"
+#define DISTBUG_VERSION		"1.2.2"
 
 #define MAX_COOKIE_SIZE		32
 #define MAX_EDGE				32.0
@@ -54,6 +54,7 @@ enum struct Jump
 	float deviation;
 	float height;
 	float sync;
+	float jumpoffAngle;
 	int airtime;
 	int wRelease;
 	int overlap;
@@ -93,6 +94,7 @@ enum struct Jump
 		this.deviation = 0.0;
 		this.height = 0.0;
 		this.sync = 0.0;
+		this.jumpoffAngle = 0.0;
 		this.airtime = 0;
 		this.wRelease = 0;
 		this.overlap = 0;
@@ -130,6 +132,7 @@ enum struct PlayerData
 	float lastNoduckOrigin[3];
 	float lastVelocity[3];
 	float jumpOrigin[3];
+	float jumpAngles[3];
 	float jumpGround[3];
 	float landGround[3];
 	float vel[3];
@@ -148,6 +151,7 @@ enum struct PlayerData
 		this.lastNoduckOrigin = NULL_VECTOR;
 		this.lastVelocity = NULL_VECTOR;
 		this.jumpOrigin = NULL_VECTOR;
+		this.jumpAngles = NULL_VECTOR;
 		this.jumpGround = NULL_VECTOR;
 		this.landGround = NULL_VECTOR;
 		this.framesOnGround = 0;

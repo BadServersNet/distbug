@@ -1,4 +1,11 @@
 
+**v1.2.1 Changelog**
+
+28.03.2021
+
+- Made distbug more accurate 2: electric boogaloo.
+- Fixed incorrect air distance on failstats.
+
 **v1.2.0 Changelog**
 
 24.10.2020
