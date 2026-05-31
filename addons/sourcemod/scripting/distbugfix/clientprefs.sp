@@ -1,48 +1,51 @@
 
 
-static Handle hDistbugCookie;
+static Handle distbugCookie;
 static int settings[MAXPLAYERS + 1];
 
 void OnPluginStart_Clientprefs()
 {
-	hDistbugCookie = RegClientCookie("distbugfix_cookie", "cookie for distbugfix", CookieAccess_Private);
-	
-	if (g_bLateLoad)
+	distbugCookie = RegClientCookie("distbugfix_cookie_v2", "cookie for distbugfix", CookieAccess_Private);
+	if (distbugCookie == INVALID_HANDLE)
 	{
-		for (int client = 1; client <= MaxClients; client++)
-		{
-			OnClientCookiesCached(client);
-		}
+		SetFailState("Couldn't create distbug cookie.");
 	}
 }
 
 void OnClientCookiesCached_Clientprefs(int client)
 {
-	char szBuffer[MAX_COOKIE_SIZE];
-	GetClientCookie(client, hDistbugCookie, szBuffer, sizeof(szBuffer));
+	char buffer[MAX_COOKIE_SIZE];
+	GetClientCookie(client, distbugCookie, buffer, sizeof(buffer));
 	
-	settings[client] = StringToInt(szBuffer);
+	settings[client] = StringToInt(buffer);
 }
 
-void SaveClientCookie(int client)
+void SaveClientCookies(int client)
 {
-	if (!IsValidClientExt(client) || !AreClientCookiesCached(client))
+	if (!GCIsValidClient(client) || !AreClientCookiesCached(client))
 	{
 		return;
 	}
 	
-	char szBuffer[MAX_COOKIE_SIZE];
-	FormatEx(szBuffer, sizeof(szBuffer), "%i", settings[client]);
-	SetClientCookie(client, hDistbugCookie, szBuffer);
+	char buffer[MAX_COOKIE_SIZE];
+	IntToString(settings[client], buffer, sizeof(buffer));
+	SetClientCookie(client, distbugCookie, buffer);
 }
 
 bool IsSettingEnabled(int client, int setting)
 {
-	return settings[client] & setting != 0;
+	if (GCIsValidClient(client))
+	{
+		return !!(settings[client] & setting);
+	}
+	return false;
 }
 
 void ToggleSetting(int client, int setting)
 {
-	settings[client] ^= setting;
-	SaveClientCookie(client);
+	if (GCIsValidClient(client))
+	{
+		settings[client] ^= setting;
+		SaveClientCookies(client);
+	}
 }

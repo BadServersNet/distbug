@@ -1,4 +1,33 @@
 
+**v2.0.0 Changelog**
+
+26.10.2022
+
+- Code fully rewritten, as it's a port of my gcljs plugin from CS 1.6.
+- Added hud strafe graph (!distbughudgraph).
+- Added strafe graph to console output (!distbugstrafegraph, on by default).
+- Added more jump types (ladderjumps, longjump-adjacent jumps, jumps with perfs).
+- Renamed deviation to veer.
+- Added jump beam and jump veer beam (!distbugbeam, !distbugveerbeam).
+- Added advanced chat toggle (!distbugadvchat), to cut down on chat spam. Before, distbug would print 3 lines to chat, now !distbugadvchat usually only prints 2, and off prints 1 for reduced spam.
+- Added jump direction to console output (except ladderjumps).
+- Added Land Edge to console output (how far from the landing block edge you were when landing).
+- Efficiency is now only based on mouse movement and is represented by percentages (100% is perfect efficiency, more, or less than that is bad).
+- Tweaked distance bug fix for probably the 6th time.
+
+Go to the [wiki page](https://bitbucket.org/GameChaos/distbug/wiki/Home) to read more about the new features!
+
+**v1.2.2 Changelog**
+
+18.01.2022
+
+- Added "Jumpoff Angle".
+
+Example: `... | OL: 15 | DA: 2 | Jumpoff Angle: -39.5ï¿½]`
+This is the yaw of the view angle of when the player jumps, relative to the angle of the airpath.
+Airpath angle is the angle that a line from the jumpoff position of the jump to the landing position points towards.
+This jump was done with right pre and it shows that I was looking -39.5 degrees to the left of the direction of the airpath when I jumped.
+
 **v1.2.1 Changelog**
 
 28.03.2021
@@ -39,7 +68,7 @@ Additions:
 
 - Added air distance which measures the distance you would get with perfect airpath.
 - Added average gain per strafe stat.
-- Implemented clientprefs, so you don’t have to turn distbug off/on all the time.
+- Implemented clientprefs, so you donï¿½t have to turn distbug off/on all the time.
 - Added airpath deviation stat.
 - Implemented late loading.
 

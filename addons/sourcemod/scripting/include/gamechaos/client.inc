@@ -4,6 +4,9 @@
 #endif
 #define _gamechaos_stocks_client_included
 
+#define GC_CLIENT_VERSION 0x01_00_00
+#define GC_CLIENT_VERSION_STRING "1.0.0"
+
 /**
  * Credit: Don't remember.
  * Removes a player's weapon from the specified slot.
@@ -12,13 +15,13 @@
  * @param slot				Weapon slot.
  * @return 					True if removed, false otherwise.
  */
-stock bool RemoveWeaponBySlot(client, slot)
+stock bool GCRemoveWeaponBySlot(int client, int slot)
 {
-	new iEntity = GetPlayerWeaponSlot(client, slot);
-	if(IsValidEdict(iEntity))
+	int entity = GetPlayerWeaponSlot(client, slot);
+	if (IsValidEdict(entity))
 	{
-		RemovePlayerItem(client, iEntity);
-		AcceptEntityInput(iEntity, "Kill");
+		RemovePlayerItem(client, entity);
+		AcceptEntityInput(entity, "kill");
 		return true;
 	}
 	return false;
@@ -31,7 +34,7 @@ stock bool RemoveWeaponBySlot(client, slot)
  * @param alive				Whether to check alive.
  * @return 					True if valid, false otherwise.
  */
-stock bool IsValidClientExt(int client, bool alive = false)
+stock bool GCIsValidClient(int client, bool alive = false)
 {
 	return (client >= 1 && client <= MaxClients && IsClientConnected(client) && IsClientInGame(client) && !IsClientSourceTV(client) && (!alive || IsPlayerAlive(client)));
 }
@@ -39,15 +42,38 @@ stock bool IsValidClientExt(int client, bool alive = false)
 
 
 /**
- * Copies the client's forwardmove and sidemove to a vector.
+ * Gets the value of m_flForwardMove.
  *
  * @param client			Client index.
- * @param result			Resultant vector.
+ * @return					Value of m_flForwardMove.
  */
-stock void GetClientVel(int client, float result[3])
+stock float GCGetClientForwardMove(int client)
 {
-	result[0] = GetEntPropFloat(client, Prop_Data, "m_flForwardMove");
-	result[1] = GetEntPropFloat(client, Prop_Data, "m_flSideMove");
+	return GetEntPropFloat(client, Prop_Data, "m_flForwardMove");
+}
+
+/**
+ * Gets the value of m_flSideMove.
+ *
+ * @param client			Client index.
+ * @return					Value of m_flSideMove.
+ */
+stock float GCGetClientSideMove(int client)
+{
+	return GetEntPropFloat(client, Prop_Data, "m_flSideMove");
+}
+
+/**
+ * Gets the client's abs origin.
+ *
+ * @param client			Client index.
+ * @return result			Player's origin.
+ */
+stock float[] GCGetClientAbsOriginRet(int client)
+{
+	float result[3]
+	GetClientAbsOrigin(client, result);
+	return result;
 }
 
 /**
@@ -56,9 +82,22 @@ stock void GetClientVel(int client, float result[3])
  * @param client			Client index.
  * @param result			Resultant vector.
  */
-stock void GetClientVelocity(int client, float result[3])
+stock void GCGetClientVelocity(int client, float result[3])
 {
 	GetEntPropVector(client, Prop_Data, "m_vecVelocity", result);
+}
+
+/**
+ * Gets the client's velocity (m_vecVelocity).
+ *
+ * @param client			Client index.
+ * @return result			m_vecVelocity.
+ */
+stock float[] GCGetClientVelocityRet(int client)
+{
+	float result[3]
+	GetEntPropVector(client, Prop_Data, "m_vecVelocity", result);
+	return result
 }
 
 /**
@@ -67,9 +106,22 @@ stock void GetClientVelocity(int client, float result[3])
  * @param client			Client index.
  * @param result			Resultant vector.
  */
-stock void GetClientBaseVelocity(int client, float result[3])
+stock void GCGetClientBaseVelocity(int client, float result[3])
 {
 	GetEntPropVector(client, Prop_Data, "m_vecBaseVelocity", result);
+}
+
+/**
+ * Gets the client's basevelocity (m_vecBaseVelocity).
+ *
+ * @param client			Client index.
+ * @return result			m_vecBaseVelocity.
+ */
+stock float[] GCGetClientBaseVelocityRet(int client)
+{
+	float result[3];
+	GetEntPropVector(client, Prop_Data, "m_vecBaseVelocity", result);
+	return result;
 }
 
 
@@ -79,7 +131,7 @@ stock void GetClientBaseVelocity(int client, float result[3])
  * @param client			Client index.
  * @return					"m_flDuckSpeed".
  */
-stock float GetClientDuckSpeed(int client)
+stock float GCGetClientDuckSpeed(int client)
 {
 	return GetEntPropFloat(client, Prop_Send, "m_flDuckSpeed");
 }
@@ -90,7 +142,7 @@ stock float GetClientDuckSpeed(int client)
  * @param client			Client index.
  * @return					"m_flDuckAmount".
  */
-stock float GetClientDuckAmount(int client)
+stock float GCGetClientDuckAmount(int client)
 {
 	return GetEntPropFloat(client, Prop_Send, "m_flDuckAmount");
 }
@@ -101,7 +153,7 @@ stock float GetClientDuckAmount(int client)
  * @param client			Client index.
  * @return					"m_bDucking".
  */
-stock int GetClientDucking(int client)
+stock int GCGetClientDucking(int client)
 {
 	return GetEntProp(client, Prop_Data, "m_bDucking");
 }
@@ -112,7 +164,7 @@ stock int GetClientDucking(int client)
  * @param client			Client index.
  * @return					"m_flMaxspeed".
  */
-stock float GetClientMaxspeed(int client)
+stock float GCGetClientMaxspeed(int client)
 {
 	return GetEntPropFloat(client, Prop_Send, "m_flMaxspeed");
 }
@@ -123,7 +175,7 @@ stock float GetClientMaxspeed(int client)
  * @param client			Client index.
  * @return					"m_afButtonPressed".
  */
-stock int GetClientButtonPressed(int client)
+stock int GCGetClientButtonPressed(int client)
 {
 	return GetEntProp(client, Prop_Data, "m_afButtonPressed");
 }
@@ -134,7 +186,7 @@ stock int GetClientButtonPressed(int client)
  * @param client			Client index.
  * @return					"m_afButtonReleased".
  */
-stock int GetClientButtonReleased(int client)
+stock int GCGetClientButtonReleased(int client)
 {
 	return GetEntProp(client, Prop_Data, "m_afButtonReleased");
 }
@@ -145,7 +197,7 @@ stock int GetClientButtonReleased(int client)
  * @param client			Client index.
  * @return					"m_afButtonLast".
  */
-stock int GetClientButtonLast(int client)
+stock int GCGetClientButtonLast(int client)
 {
 	return GetEntProp(client, Prop_Data, "m_afButtonLast");
 }
@@ -156,7 +208,7 @@ stock int GetClientButtonLast(int client)
  * @param client			Client index.
  * @return					"m_afButtonForced".
  */
-stock int GetClientForcedButtons(int client)
+stock int GCGetClientForcedButtons(int client)
 {
 	return GetEntProp(client, Prop_Data, "m_afButtonForced");
 }
@@ -167,9 +219,9 @@ stock int GetClientForcedButtons(int client)
  * @param client			Client index.
  * @return					"m_flStamina".
  */
-stock float GetClientStamina(int client)
+stock float GCGetClientStamina(int client)
 {
-	return GetEntPropFloat(client, Prop_Send, "m_flStamina")
+	return GetEntPropFloat(client, Prop_Send, "m_flStamina");
 }
 
 
@@ -180,7 +232,7 @@ stock float GetClientStamina(int client)
  * @param client			Client index.
  * @param origin			New origin.
  */
-stock void SetClientAbsOrigin(int client, const float origin[3])
+stock void GCSetClientAbsOrigin(int client, const float origin[3])
 {
 	SetEntPropVector(client, Prop_Data, "m_vecAbsOrigin", origin);
 }
@@ -191,7 +243,7 @@ stock void SetClientAbsOrigin(int client, const float origin[3])
  * @param client			Client index.
  * @param velocity			New velocity.
  */
-stock void SetClientVelocity(int client, const float velocity[3])
+stock void GCSetClientVelocity(int client, const float velocity[3])
 {
 	SetEntPropVector(client, Prop_Data, "m_vecVelocity", velocity);
 }
@@ -202,7 +254,7 @@ stock void SetClientVelocity(int client, const float velocity[3])
  * @param client			Client index.
  * @param velocity			New "m_vecAbsVelocity".
  */
-stock void SetClientAbsVelocity(int client, const float velocity[3])
+stock void GCSetClientAbsVelocity(int client, const float velocity[3])
 {
 	SetEntPropVector(client, Prop_Data, "m_vecAbsVelocity", velocity);
 }
@@ -214,7 +266,7 @@ stock void SetClientAbsVelocity(int client, const float velocity[3])
  * @param client			Client index.
  * @param ang				New eyeangles.
  */
-stock void SetClientEyeAngles(int client, const float[] ang)
+stock void GCSetClientEyeAngles(int client, const float[] ang)
 {
 	SetEntPropFloat(client, Prop_Send, "m_angEyeAngles[0]", ang[0]);
 	SetEntPropFloat(client, Prop_Send, "m_angEyeAngles[1]", ang[1]);
@@ -227,22 +279,22 @@ stock void SetClientEyeAngles(int client, const float[] ang)
  * @param client			Client index.
  * @param value			New "m_flDuckSpeed".
  */
-stock void SetClientDuckSpeed(int client, float value)
+stock void GCSetClientDuckSpeed(int client, float value)
 {
 	SetEntPropFloat(client, Prop_Send, "m_flDuckSpeed", value);
 }
 
-stock void SetClientDuckAmount(int client, float value)
+stock void GCSetClientDuckAmount(int client, float value)
 {
 	SetEntPropFloat(client, Prop_Send, "m_flDuckAmount", value);
 }
 
-stock void SetClientForcedButtons(int client, int buttons)
+stock void GCSetClientForcedButtons(int client, int buttons)
 {
 	SetEntProp(client, Prop_Data, "m_afButtonForced", buttons);
 }
 
-stock void SetClientStamina(int client, float stamina)
+stock void GCSetClientStamina(int client, float stamina)
 {
 	SetEntPropFloat(client, Prop_Send, "m_flStamina", stamina)
 }

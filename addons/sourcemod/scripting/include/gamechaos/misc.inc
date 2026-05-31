@@ -4,17 +4,8 @@
 #endif
 #define _gamechaos_stocks_misc_included
 
-/**
- * No idea what this is TODO: find out what this is.
- *
- * @param jumpoff			First vector.
- * @param position			Second vector.
- * @return 					True on success, false otherwise. (don't know why return type is int TODO: fix)
- */
-stock int BlockDirection(const float jumpoff[3], const float position[3])
-{
-	return FloatAbs(position[1] - jumpoff[1]) > FloatAbs(position[0] - jumpoff[0]);
-}
+#define GC_MISC_VERSION 0x01_00_00
+#define GC_MISC_VERSION_STRING "1.0.0"
 
 /**
  * Check if player is overlapping their MOVERIGHT and MOVELEFT buttons.
@@ -22,7 +13,7 @@ stock int BlockDirection(const float jumpoff[3], const float position[3])
  * @param x					Buttons;
  * @return 					True if overlapping, false otherwise.
  */
-stock bool IsOverlapping(int buttons)
+stock bool GCIsOverlapping(int buttons)
 {
 	return buttons & IN_MOVERIGHT && buttons & IN_MOVELEFT
 }
@@ -34,7 +25,7 @@ stock bool IsOverlapping(int buttons)
  * @param lastspeed			Player speed from previous tick.
  * @return 					True if player gained speed, false otherwise.
  */
-stock bool IsStrafeSynced(float speed, float lastspeed)
+stock bool GCIsStrafeSynced(float speed, float lastspeed)
 {
 	return speed > lastspeed;
 }
@@ -45,7 +36,7 @@ stock bool IsStrafeSynced(float speed, float lastspeed)
  * @param x					Buttons.
  * @return 					True if they're not holding either, false otherwise.
  */
-stock bool IsDeadAirtime(int buttons)
+stock bool GCIsDeadAirtime(int buttons)
 {
 	return !(buttons & IN_MOVERIGHT) && !(buttons & IN_MOVELEFT);
 }
@@ -55,32 +46,32 @@ stock bool IsDeadAirtime(int buttons)
 * Runs a single line of vscript code. 
 * NOTE: Dont use the "script" console command, it startes a new instance and leaks memory. Use this instead! 
 * 
-* @param sCode        The code to run. 
+* @param code				The code to run. 
 * @noreturn 
 */ 
-stock void RunScriptCode(const char[] sCode, any ...) 
+stock void GCRunScriptCode(const char[] code, any ...) 
 { 
-	static int iScriptLogic = INVALID_ENT_REFERENCE; 
+	static int scriptLogic = INVALID_ENT_REFERENCE; 
 	
-	if (iScriptLogic == INVALID_ENT_REFERENCE || !IsValidEntity(iScriptLogic))
+	if (scriptLogic == INVALID_ENT_REFERENCE || !IsValidEntity(scriptLogic))
 	{
-		iScriptLogic = EntIndexToEntRef(CreateEntityByName("logic_script")); 
-		if (iScriptLogic == INVALID_ENT_REFERENCE || !IsValidEntity(iScriptLogic))
+		scriptLogic = EntIndexToEntRef(CreateEntityByName("logic_script")); 
+		if (scriptLogic == INVALID_ENT_REFERENCE || !IsValidEntity(scriptLogic))
 		{
-			SetFailState("Could not create 'logic_script'"); 
+			SetFailState("Could not create a 'logic_script' entity."); 
 		}
 		
-		DispatchSpawn(iScriptLogic); 
+		DispatchSpawn(scriptLogic); 
 	} 
 	
-	static char sBuffer[512]; 
-	VFormat(sBuffer, sizeof(sBuffer), sCode, 2); 
+	char buffer[512]; 
+	VFormat(buffer, sizeof(buffer), code, 2); 
 	
-	SetVariantString(sBuffer); 
-	AcceptEntityInput(iScriptLogic, "RunScriptCode"); 
+	SetVariantString(buffer); 
+	AcceptEntityInput(scriptLogic, "RunScriptCode"); 
 }
 
-stock void TE_SendBeamBox(int client,
+stock void GCTE_SendBeamBox(int client,
 						  const float origin[3],
 						  const float mins[3],
 						  const float maxs[3],
@@ -132,7 +123,7 @@ stock void TE_SendBeamBox(int client,
 	}
 }
 
-stock void TE_SendBeamCross(int client,
+stock void GCTE_SendBeamCross(int client,
 							const float origin[3],
 							int ModelIndex,
 							int HaloIndex = 0,
@@ -177,7 +168,7 @@ stock void TE_SendBeamCross(int client,
 	}
 }
 
-stock void TE_SendBeamRectangle(int client,
+stock void GCTE_SendBeamRectangle(int client,
 						  const float origin[3],
 						  const float mins[3],
 						  const float maxs[3],
@@ -194,7 +185,7 @@ stock void TE_SendBeamRectangle(int client,
 						  int speed = 0)
 {
 	float vertices[4][3];
-	RectangleVerticesFromPoint(vertices, origin, mins, maxs);
+	GCRectangleVerticesFromPoint(vertices, origin, mins, maxs);
 	
 	// send the square
 	for (int i; i < 4; i++)
@@ -226,7 +217,7 @@ stock void TE_SendBeamRectangle(int client,
  * @param maxs				Maximum size of the rectangle.
  * @return 					True if overlapping, false otherwise.
  */
-stock void RectangleVerticesFromPoint(float result[4][3], const float origin[3], const float mins[3], const float maxs[3])
+stock void GCRectangleVerticesFromPoint(float result[4][3], const float origin[3], const float mins[3], const float maxs[3])
 {
 	// Vertices are set clockwise starting from top left (-x; -y)
 	

@@ -4,20 +4,44 @@
 #endif
 #define _gamechaos_stocks_strings_included
 
+// these are used for functions that return strings.
+// you can change these if they're too small/big.
+#define GC_FIXED_BUFFER_SIZE_SMALL 64
+#define GC_FIXED_BUFFER_SIZE_LARGE 4096
+
+/**
+ * Puts the values from a string of integers into an array
+ *
+ * @param string			
+ * @param separator			
+ * @param array				
+ * @param arraysize			
+ */
+stock void GCSeparateIntsFromString(const char[] string, const char[] separator, int[] array, int arraysize)
+{
+	char[][] explodedbuffer = new char[arraysize][32];
+	
+	ExplodeString(string, separator, explodedbuffer, arraysize, 32);
+	
+	for (int i; i < arraysize; i++)
+	{
+		array[i] = StringToInt(explodedbuffer[i]);
+	}
+}
+
 /**
  * Prints a message to all admins in the chat area.
  *
  * @param format			Formatting rules.
  * @param ...				Variable number of format parameters.
- * @error					If the client is not connected an error will be thrown.
  */
-stock void PrintToChatAdmins(const char[] format, any ...)
+stock void GCPrintToChatAdmins(const char[] format, any ...)
 {
 	char buffer[256];
 	
 	for (int i = 1; i <= MaxClients; i++)
 	{
-		if (IsClientInGame(i))
+		if (GCIsValidClient(i))
 		{
 			AdminId id = GetUserAdmin(i);
 			if (!GetAdminFlag(id, Admin_Generic))
@@ -34,14 +58,10 @@ stock void PrintToChatAdmins(const char[] format, any ...)
 /**
  * Removes trailings zeroes from a string. Also removes the decimal point if it can.
  *
- * @param string			
- * @param strsize			
- * @param separator			
- * @param array				
- * @param arraysize			
- * @error					If the client is not connected an error will be thrown.
+ * @param buffer			Buffer to trim.
+ * @return					Whether anything was removed.
  */
-stock bool RemoveTrailing0s(char[] buffer)
+stock bool GCRemoveTrailing0s(char[] buffer)
 {
 	bool removed;
 	int maxlen = strlen(buffer);
@@ -77,7 +97,7 @@ stock bool RemoveTrailing0s(char[] buffer)
  * @param formattedTime		String to use for formatting.
  * @param size				String size.
  */
-stock void FormatTickTimeHHMMSS(int timeInTicks, float tickRate, char[] formattedTime, int size)
+stock void GCFormatTickTimeHHMMSS(int timeInTicks, float tickRate, char[] formattedTime, int size)
 {
 	if (timeInTicks <= 0)
 	{
@@ -111,7 +131,7 @@ stock void FormatTickTimeHHMMSS(int timeInTicks, float tickRate, char[] formatte
  * @param size				String size.
  * @param decimals			Amount of decimals to use for the fractional part.
  */
-stock void FormatTimeHHMMSS(float seconds, char[] formattedTime, int size, int decimals)
+stock void GCFormatTimeHHMMSS(float seconds, char[] formattedTime, int size, int decimals)
 {
 	int iFlooredTime = RoundToFloor(seconds);
 	int iHours = iFlooredTime / 3600;
@@ -146,7 +166,7 @@ stock void FormatTimeHHMMSS(float seconds, char[] formattedTime, int size, int d
  * @param strsize			String size.
  * @param number			Unicode codepoint to encode.
  */
-stock void EncodeUtf8(char[] string, char strsize, int number)
+stock void GCEncodeUtf8(char[] string, char strsize, int number)
 {
 	// UTF-8 octet sequence (only change digits marked with x)
 	/*
@@ -216,7 +236,7 @@ stock void EncodeUtf8(char[] string, char strsize, int number)
 		string[zeropos + 3] = '\0';
 	}
 	// 4 bytes
-	else if (number < 0x110_000);
+	else if (number < 0x110_000)
 	{
 		// can't encode if we don't have enough room
 		if (zeropos + 4 >= strsize)
@@ -242,7 +262,7 @@ stock void EncodeUtf8(char[] string, char strsize, int number)
  * @param codepoints		Array to use to store the codepoints.
  * @param cplength			Array length.
  */
-stock void DecodeUtf8(char[] string, int strsize, int[] codepoints, int cplength)
+stock void GCDecodeUtf8(char[] string, int strsize, int[] codepoints, int cplength)
 {
 	int charindex;
 	int cpindex;
@@ -285,4 +305,63 @@ stock void DecodeUtf8(char[] string, int strsize, int[] codepoints, int cplength
 		charindex++;
 		cpindex++;
 	}
+}
+
+/**
+ * Converts an integer to a string.
+ * Same as IntToString, but it returns the string.
+ *
+ * @param num           Integer to convert.
+ * @return              String of the number.
+ */
+stock char[] GCIntToStringRet(int num)
+{
+	char string[GC_FIXED_BUFFER_SIZE_SMALL];
+	IntToString(num, string, sizeof string);
+	return string;
+}
+
+ /**
+ * Converts a floating point number to a string.
+ * Same as FloatToString, but it returns the string.
+ *
+ * @param num           Floating point number to convert.
+ * @return              String of the number.
+ */
+stock char[] GCFloatToStringRet(float num)
+{
+	char string[GC_FIXED_BUFFER_SIZE_SMALL];
+	FloatToString(num, string, sizeof string);
+	return string;
+}
+
+/**
+ * Formats a string according to the SourceMod format rules (see documentation).
+ * Same as Format, except it returns the formatted string.
+ *
+ * @param format        Formatting rules.
+ * @param ...           Variable number of format parameters.
+ * @return              Formatted string.
+ */
+stock char[] GCFormatReturn(const char[] format, any ...)
+{
+	char string[GC_FIXED_BUFFER_SIZE_LARGE];
+	VFormat(string, sizeof string, format, 2);
+	return string;
+}
+
+/**
+ * Removes whitespace characters from the beginning and end of a string.
+ * Same as TrimString, except it returns the formatted string and
+ * it doesn't modify the passed string.
+ *
+ * @param str           The string to trim.
+ * @return              Number of bytes written (UTF-8 safe).
+ */
+stock char[] GCTrimStringReturn(char[] str)
+{
+	char string[GC_FIXED_BUFFER_SIZE_LARGE];
+	strcopy(string, sizeof string, str);
+	TrimString(string);
+	return string;
 }

@@ -4,7 +4,29 @@
 #endif
 #define _gamechaos_stocks_maths_included
 
+#define GC_MATHS_VERSION 0x02_00_00
+#define GC_MATHS_VERSION_STRING "2.0.0"
+
 #include <gamechaos/vectors>
+
+#define GC_PI 3.14159265359
+
+#define GC_DEGREES(%1) ((%1) * 180.0 / GC_PI) // convert radians to degrees
+#define GC_RADIANS(%1) ((%1) * GC_PI / 180.0) // convert degrees to radians
+
+#define GC_FLOAT_NAN               view_as<float>(0xffffffff)
+#define GC_FLOAT_INFINITY          view_as<float>(0x7f800000)
+#define GC_FLOAT_NEGATIVE_INFINITY view_as<float>(0xff800000)
+
+#define GC_FLOAT_LARGEST_POSITIVE view_as<float>(0x7f7fffff)
+#define GC_FLOAT_SMALLEST_NEGATIVE view_as<float>(0xff7fffff)
+
+#define GC_FLOAT_SMALLEST_POSITIVE view_as<float>(0x00000001)
+#define GC_FLOAT_LARGEST_NEGATIVE view_as<float>(0x80000001)
+
+#define GC_INT_MAX 0x7fffffff
+#define GC_INT_MIN 0xffffffff
+
 
 /**
  * Credit: https://stackoverflow.com/questions/5666222/3d-line-plane-intersection
@@ -16,7 +38,7 @@
  * @param lineDirection Direction vector of the line.
  * @param result		Resultant vector.
  */
-stock void LineIntersection(const float planePoint[3], const float planeNormal[3], const float linePoint[3], const float lineDirection[3], float result[3])
+stock void GCLineIntersection(const float planePoint[3], const float planeNormal[3], const float linePoint[3], const float lineDirection[3], float result[3])
 {
 	if (GetVectorDotProduct(planeNormal, lineDirection) == 0)
 	{
@@ -28,7 +50,7 @@ stock void LineIntersection(const float planePoint[3], const float planeNormal[3
 			 / GetVectorDotProduct(planeNormal, lineDirection);
 	
 	float lineDir[3];
-	CopyVector(lineDirection, lineDir);
+	lineDir = lineDirection;
 	NormalizeVector(lineDir, lineDir);
 	
 	ScaleVector(lineDir, t);
@@ -44,7 +66,7 @@ stock void LineIntersection(const float planePoint[3], const float planeNormal[3
  * @param distance			Maximum distance to trace.
  * @return 					True on success, false otherwise.
  */
-stock void CalcPointAngleDistance(const float start[3], const float angle[3], float distance, float result[3])
+stock void GCCalcPointAngleDistance(const float start[3], const float angle[3], float distance, float result[3])
 {
 	float zsine = Sine(DegToRad(-angle[0]));
 	float zcos = Cosine(DegToRad(-angle[0]));
@@ -65,9 +87,9 @@ stock void CalcPointAngleDistance(const float start[3], const float angle[3], fl
  * @param tolerance			How close the floats have to be to return true.
  * @return 					True on success, false otherwise.
  */
-stock bool IsRoughlyEqual(float z1, float z2, float tolerance)
+stock bool GCIsRoughlyEqual(float z1, float z2, float tolerance)
 {
-	return IsFloatInRange(z1 - z2, -tolerance, tolerance);
+	return FloatAbs(z1 - z2) < tolerance;
 }
 
 /**
@@ -78,22 +100,9 @@ stock bool IsRoughlyEqual(float z1, float z2, float tolerance)
  * @param max				Maximum range.
  * @return 					True on success, false otherwise.
  */
-stock bool IsFloatInRange(float number, float min, float max)
+stock bool GCIsFloatInRange(float number, float min, float max)
 {
 	return number >= min && number <= max;
-}
-
-/**
- * Checks if a float is within a lower bound.
- *
- * @param z1				Float 1.
- * @param z2				Float 2.
- * @param tolerance			Size of lower bound.
- * @return 					True if success, false otherwise.
- */
-stock bool IsFailstat(float z1, float z2, float tolerance)
-{
-	return z1 < z2 && z1 > z2 - tolerance;
 }
 
 /**
@@ -102,16 +111,37 @@ stock bool IsFailstat(float z1, float z2, float tolerance)
  * @param angle				Angle.
  * @return 					Normalised angle.
  */
-public float NormaliseAngle(float angle)
+stock float GCNormaliseYaw(float angle)
 {
-	while (angle <= -180.0)
+	if (angle <= -180.0)
 	{
 		angle += 360.0;
 	}
 	
-	while (angle > 180.0)
+	if (angle > 180.0)
 	{
 		angle -= 360.0;
+	}
+	
+	return angle;
+}
+
+/**
+ * Keeps the yaw angle within the range of -180 to 180.
+ *
+ * @param angle				Angle.
+ * @return 					Normalised angle.
+ */
+stock float GCNormaliseYawRad(float angle)
+{
+	if (angle <= -FLOAT_PI)
+	{
+		angle += FLOAT_PI * 2;
+	}
+	
+	if (angle > FLOAT_PI)
+	{
+		angle -= FLOAT_PI * 2;
 	}
 	
 	return angle;
@@ -125,11 +155,11 @@ public float NormaliseAngle(float angle)
  * @param fraction			Amount to interpolate.
  * @return 					Interpolated value.
  */
-stock float InterpLinear(float f1, float f2, float fraction)
+stock float GCInterpLinear(float f1, float f2, float fraction)
 {
-	float diff = f1 - f2;
+	float diff = f2 - f1;
 	
-	return diff * fraction + f2;
+	return diff * fraction + f1;
 }
 
 /**
@@ -140,11 +170,12 @@ stock float InterpLinear(float f1, float f2, float fraction)
  * @param fraction			Interpolated value.
  * @return 					Fraction.
  */
-stock float CalcLerpFraction(float f1, float f2, float lerped)
+stock float GCCalcLerpFraction(float f1, float f2, float lerped)
 {
-	float diff = f1 - f2;
+	float diff = f2 - f1;
 	
-	float fraction = lerped - f2 / diff;
+	float fraction = lerped - f1 / diff;
+	return fraction;
 }
 
 /**
@@ -153,9 +184,33 @@ stock float CalcLerpFraction(float f1, float f2, float lerped)
  * @param x					Integer.
  * @return 					Absolute value of integer.
  */
-stock int Abs(x)
+stock int GCIntAbs(int x)
 {
    return x >= 0 ? x : -x;
+}
+
+/**
+ * Get the maximum of 2 integers.
+ *
+ * @param n1				Integer.
+ * @param n2				Integer.
+ * @return 					The biggest of n1 and n2.
+ */
+stock int GCIntMax(int n1, int n2)
+{
+	return n1 > n2 ? n1 : n2;
+}
+
+/**
+ * Get the minimum of 2 integers.
+ *
+ * @param n1				Integer.
+ * @param n2				Integer.
+ * @return 					The smallest of n1 and n2.
+ */
+stock int GCIntMin(int n1, int n2)
+{
+	return n1 < n2 ? n1 : n2;
 }
 
 /**
@@ -166,7 +221,7 @@ stock int Abs(x)
  * @param max				Maximum range.
  * @return 					True on success, false otherwise.
  */
-stock bool IsIntInRange(int number, int min, int max)
+stock bool GCIsIntInRange(int number, int min, int max)
 {
 	return number >= min && number <= max;
 }
@@ -178,13 +233,8 @@ stock bool IsIntInRange(int number, int min, int max)
  * @param denominator		Denominator.
  * @return 					Float percentage. -1.0 on failure.
  */
-stock float CalcIntPercentage(int numerator, int denominator)
+stock float GCCalcIntPercentage(int numerator, int denominator)
 {
-	if (denominator == 0)
-	{
-		return -1.0;
-	}
-	
 	return float(numerator) / float(denominator) * 100.0;
 }
 
@@ -197,7 +247,7 @@ stock float CalcIntPercentage(int numerator, int denominator)
  * @param exponent		Value to raise the base.
  * @return				Value to the power of exponent.
  */
-stock int IntPow(int base, int exponent)
+stock int GCIntPow(int base, int exponent)
 {
 	if (exponent < 0)
 	{
@@ -205,7 +255,7 @@ stock int IntPow(int base, int exponent)
 	}
 	
 	int result = 1;
-	while (true)
+	for (;;)
 	{
 		if (exponent & 1)
 		{
@@ -225,16 +275,37 @@ stock int IntPow(int base, int exponent)
 }
 
 /**
- * Swaps the bits of 2 cells.
+ * Swaps the values of 2 variables.
  *
  * @param cell1				Cell 1.
  * @param cell2				Cell 2.
  */
-stock void SwapCells(any &cell1, any &cell2)
+stock void GCSwapCells(any &cell1, any &cell2)
 {
 	any temp = cell1;
 	cell1 = cell2;
 	cell2 = temp;
+}
+
+/**
+ * Clamps an int between min and max.
+ *
+ * @param value				Float to clamp.
+ * @param min				Minimum range.
+ * @param max				Maximum range.
+ * @return 					Clamped value.
+ */
+stock int GCIntClamp(int value, int min, int max)
+{
+	if (value < min)
+	{
+		return min;
+	}
+	if (value > max)
+	{
+		return max;
+	}
+	return value;
 }
 
 /**
@@ -244,7 +315,7 @@ stock void SwapCells(any &cell1, any &cell2)
  * @param num2				Number 2.
  * @return 					Biggest number.
  */
-stock float FloatMax(float num1, float num2)
+stock float GCFloatMax(float num1, float num2)
 {
 	if (num1 > num2)
 	{
@@ -260,11 +331,32 @@ stock float FloatMax(float num1, float num2)
  * @param num2				Number 2.
  * @return 					Smallest number.
  */
-stock float FloatMin(float num1, float num2)
+stock float GCFloatMin(float num1, float num2)
 {
 	if (num1 < num2)
 	{
 		return num1;
 	}
 	return num2;
+}
+
+/**
+ * Clamps a float between min and max.
+ *
+ * @param value				Float to clamp.
+ * @param min				Minimum range.
+ * @param max				Maximum range.
+ * @return 					Clamped value.
+ */
+stock float GCFloatClamp(float value, float min, float max)
+{
+	if (value < min)
+	{
+		return min;
+	}
+	if (value > max)
+	{
+		return max;
+	}
+	return value;
 }

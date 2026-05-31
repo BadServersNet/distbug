@@ -2,26 +2,30 @@
 // Useful things for making plugins for Kreedz Climbing
 //
 
-#if defined _kreedzclimbing_included
+#if defined _gamechaos_kreedzclimbing_included
 	#endinput
 #endif
-#define _kreedzclimbing_included
+#define _gamechaos_kreedzclimbing_included
 
-#define MAX_COURSE_SIZE		128		// Reasonable maximum characters a course name can have
-#define COURSE_CVAR_COUNT	20		// the amount of Course<int> cvars
+#define GC_KREEDZCLIMBING_VERSION 0x01_00_00
+#define GC_KREEDZCLIMBING_VERSION_STRING "1.0.0"
+
+
+#define MAX_COURSE_SIZE   128 // Reasonable maximum characters a course name can have
+#define COURSE_CVAR_COUNT 20  // the amount of Course<int> cvars
 
 // Kreedz Climbing Client Commands:
 // These may be executed by a player via the console, with / in chat, or via binds.
 
-// specmode - Cycles spectator mode (F3 by default).
-// kz_pause - Pauses the timer.
-// flare - Fires a flare.
+// specmode          - Cycles spectator mode (F3 by default).
+// kz_pause          - Pauses the timer.
+// flare             - Fires a flare.
 // gototimer | start - Returns to the last pressed start timer.
-// spectate | spec - Enters spectator mode.
-// forcespectator - Becomes a spectator no matter what (force respawns a dead player as well).
-// stoptimer - Instantly stops the player's timer.
-// climb | ct - Respawns at the map spawnpoint.
-// InvalidateTimer - Invalidates the player's timer. An invalid timer can't earn rewards for completing the course. InvalidateTimer 1 displays the message, without the 1 it does not.
+// spectate | spec   - Enters spectator mode.
+// forcespectator    - Becomes a spectator no matter what (force respawns a dead player as well).
+// stoptimer         - Instantly stops the player's timer.
+// climb | ct        - Respawns at the map spawnpoint.
+// InvalidateTimer   - Invalidates the player's timer. An invalid timer can't earn rewards for completing the course. InvalidateTimer 1 displays the message, without the 1 it does not.
 
 // Kreedz Climbing Constants
 
@@ -74,7 +78,7 @@
 #define IN_HOOK			(1 << 29)
 
 // converts the course id from the obsolete "player_starttimer" event into the course name
-stock void CourseidToString(int courseid, char[] course, int size)
+stock void GCCourseidToString(int courseid, char[] course, int size)
 {
 	char szCourseid[16];
 	if (courseid < 1 || courseid > COURSE_CVAR_COUNT)
@@ -85,7 +89,7 @@ stock void CourseidToString(int courseid, char[] course, int size)
 	FindConVar(szCourseid).GetString(course, size);
 }
 
-stock void CurrentMapCourses(ArrayList &array)
+stock void GCGetCurrentMapCourses(ArrayList &array)
 {
 	if (array == null)
 	{
@@ -97,16 +101,16 @@ stock void CurrentMapCourses(ArrayList &array)
 		array.Clear();
 	}
 	
-	char szCourse[MAX_COURSE_SIZE];
+	char course[MAX_COURSE_SIZE];
 	
 	int ent;
 	while((ent = FindEntityByClassname(ent, "func_stoptimer")) != -1) 
 	{
 		int courseid = GetEntProp(ent, Prop_Data, "CourseID");
-		CourseidToString(courseid, szCourse, sizeof(szCourse));
-		array.PushString(szCourse);
+		GCCourseidToString(courseid, course, sizeof(course));
+		array.PushString(course);
 		
-		bool endurance = IsCourseEndurance(szCourse, ent);
+		bool endurance = GCIsCourseEndurance(course, ent);
 		array.Set(array.Length - 1, endurance, ByteCountToCells(MAX_COURSE_SIZE));
 	}
 	
@@ -116,61 +120,61 @@ stock void CurrentMapCourses(ArrayList &array)
 	
 	for (int i; i < courseStringtableCount; i++)
 	{
-		ReadStringTable(courseNamesIdx, i, szCourse, sizeof(szCourse));
-		array.PushString(szCourse);
+		ReadStringTable(courseNamesIdx, i, course, sizeof(course));
+		array.PushString(course);
 		
-		bool endurance = IsCourseEndurance(szCourse, ent);
+		bool endurance = GCIsCourseEndurance(course, ent);
 		array.Set(array.Length - 1, endurance, ByteCountToCells(MAX_COURSE_SIZE));
 	}
 }
 
-stock int TimerState(int client)
+stock int GCGetTimerState(int client)
 {
 	return GetEntProp(client, Prop_Send, "Timer_Active");
 }
 
-stock void SetTimerState(int client, int timerstate)
+stock void GCSetTimerState(int client, int timerstate)
 {
 	SetEntProp(client, Prop_Send, "Timer_Active", timerstate);
 }
 
-stock int PlayerEnvAttributes(int client)
+stock int GCGetPlayerEnvAttributes(int client)
 {
 	return GetEntProp(client, Prop_Send, "m_iEnvironmentalAttributes");
 }
 
-stock void SetPlayerEnvAttributes(int client, int attributes)
+stock void GCSetPlayerEnvAttributes(int client, int attributes)
 {
 	SetEntProp(client, Prop_Send, "m_iEnvironmentalAttributes", attributes);
 }
 
-stock int PlayerMovementRestrictions(int client)
+stock int GCGetPlayerMovementRestrictions(int client)
 {
 	return GetEntProp(client, Prop_Send, "m_iMovementRestrictions");
 }
 
-stock void SetPlayerMovementRestrictions(int client, int restrictions)
+stock void GCSetPlayerMovementRestrictions(int client, int restrictions)
 {
 	SetEntProp(client, Prop_Send, "m_iMovementRestrictions", restrictions);
 }
 
-stock void SetActiveCourse(int client, int course)
+stock void GCSetActiveCourse(int client, int course)
 {
 	int ent = FindEntityByClassname(0, "player_manager");
 	int courseOffset = FindSendPropInfo("CPlayerResource", "m_iActiveCourse");
 	SetEntData(ent, courseOffset + (client * 4), course);
 }
 
-stock int TimerFlags(int client)
+stock int GCGetTimerFlags(int client)
 {
 	int ent = FindEntityByClassname(0, "player_manager");
 	int courseOffset = FindSendPropInfo("CPlayerResource", "m_iTimerFlags");
 	return GetEntData(ent, courseOffset + (client * 4));
 }
 
-stock bool InvalidateTimer(int client)
+stock bool GCInvalidateTimer(int client)
 {
-	if (~TimerFlags(client) & TIMER_FLAG_INVALID)
+	if (~GCGetTimerFlags(client) & TIMER_FLAG_INVALID)
 	{
 		FakeClientCommand(client, "InvalidateTimer 1");
 		return true;
@@ -179,7 +183,7 @@ stock bool InvalidateTimer(int client)
 	return false;
 }
 
-stock bool IsCourseEndurance(char[] szCourse, int ent = -1)
+stock bool GCIsCourseEndurance(char[] course, int ent = -1)
 {
 	if (ent != -1)
 	{
@@ -193,11 +197,10 @@ stock bool IsCourseEndurance(char[] szCourse, int ent = -1)
 	{
 		if (IsValidEntity(ent))
 		{
-			char szBuffer[MAX_COURSE_SIZE];
-			GetEntPropString(ent, Prop_Data, "m_strCourseName", szBuffer, sizeof(szBuffer));
-			PrintToChatAll("course %s", szBuffer);
+			char buffer[MAX_COURSE_SIZE];
+			GetEntPropString(ent, Prop_Data, "m_strCourseName", buffer, sizeof(buffer));
 			
-			if (StrEqual(szBuffer, szCourse))
+			if (StrEqual(buffer, course))
 			{
 				return !!(GetEntProp(ent, Prop_Data, "m_bEnduranceCourse"));
 			}
@@ -208,11 +211,11 @@ stock bool IsCourseEndurance(char[] szCourse, int ent = -1)
 	{
 		if (IsValidEntity(ent))
 		{
-			char szBuffer[MAX_COURSE_SIZE];
+			char buffer[MAX_COURSE_SIZE];
 			int courseid = GetEntProp(ent, Prop_Data, "CourseID");
-			CourseidToString(courseid, szBuffer, sizeof(szBuffer));
+			GCCourseidToString(courseid, buffer, sizeof(buffer));
 			
-			if (StrEqual(szBuffer, szCourse))
+			if (StrEqual(buffer, course))
 			{
 				return !!(GetEntProp(ent, Prop_Data, "m_bEnduranceCourse"));
 			}

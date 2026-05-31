@@ -4,6 +4,11 @@
 #endif
 #define _gamechaos_stocks_tracing_included
 
+#include <sdktools_trace>
+
+#define GC_TRACING_VERSION 0x01_00_00
+#define GC_TRACING_VERSION_STRING "1.0.0"
+
 /**
  * Trace ray filter that filters players from being traced.
  *
@@ -11,7 +16,7 @@
  * @param data				Data.
  * @return 					True on success, false otherwise.
  */
-stock bool TraceEntityFilterPlayer(int entity, any data)
+stock bool GCTraceEntityFilterPlayer(int entity, any data)
 {
 	return entity > MAXPLAYERS;
 }
@@ -27,10 +32,10 @@ stock bool TraceEntityFilterPlayer(int entity, any data)
  * @param bugged			Whether to add gravity to the player's velocity or not.
  * @return 					True on success, false otherwise.
  */
-stock bool TraceLandPos(int client, const float pos[3], const float velocity[3], float result[3], float fGravity, bool bugged = false)
+stock bool GCTraceLandPos(int client, const float pos[3], const float velocity[3], float result[3], float fGravity, bool bugged = false)
 {
 	float newVel[3];
-	CopyVector(velocity, newVel);
+	newVel = velocity;
 	
 	if (bugged)
 	{
@@ -52,11 +57,11 @@ stock bool TraceLandPos(int client, const float pos[3], const float velocity[3],
 	GetClientMins(client, mins);
 	GetClientMaxs(client, maxs);
 	
-	Handle trace = TR_TraceHullFilterEx(pos, pos2, mins, maxs, MASK_PLAYERSOLID, TraceEntityFilterPlayer);
+	Handle trace = TR_TraceHullFilterEx(pos, pos2, mins, maxs, MASK_PLAYERSOLID, GCTraceEntityFilterPlayer);
 	
 	if (!TR_DidHit(trace))
 	{
-		CopyVector(pos, result);
+		result = pos;
 		CloseHandle(trace);
 		return false;
 	}
@@ -68,14 +73,14 @@ stock bool TraceLandPos(int client, const float pos[3], const float velocity[3],
 }
 
 /**
- * Traces the player hull straight down beneath the player.
+ * Traces the player hull 2 units straight down beneath the player.
  *
  * @param client			Player's index.
  * @param pos				Player's position vector.
  * @param result			Trace endpoint on success, player's position on failure.
  * @return 					True on success, false otherwise.
  */
-stock bool TraceGround(int client, const float pos[3], float result[3])
+stock bool GCTraceGround(int client, const float pos[3], float result[3])
 {
 	float mins[3];
 	float maxs[3];
@@ -86,12 +91,12 @@ stock bool TraceGround(int client, const float pos[3], float result[3])
 	float startpos[3];
 	float endpos[3];
 	
-	CopyVector(pos, startpos);
-	CopyVector(pos, endpos);
+	startpos = pos;
+	endpos = pos;
 	
 	endpos[2] -= 2.0;
 	
-	TR_TraceHullFilter(startpos, endpos, mins, maxs, MASK_PLAYERSOLID, TraceEntityFilterPlayer);
+	TR_TraceHullFilter(startpos, endpos, mins, maxs, MASK_PLAYERSOLID, GCTraceEntityFilterPlayer);
 	
 	if (TR_DidHit())
 	{
@@ -113,12 +118,12 @@ stock bool TraceGround(int client, const float pos[3], float result[3])
  * @param result			Trace endpoint on success, player's position on failure.
  * @return 					True on success, false otherwise.
  */
-stock bool TraceBlock(const float pos1[3], const float pos2[3], float result[3])
+stock bool GCTraceBlock(const float pos1[3], const float pos2[3], float result[3])
 {
 	float mins[3] =  {-16.0, -16.0, -1.0};
 	float maxs[3] =  { 16.0,  16.0,  0.0};
 	
-	TR_TraceHullFilter(pos1, pos2, mins, maxs, MASK_PLAYERSOLID, TraceEntityFilterPlayer);
+	TR_TraceHullFilter(pos1, pos2, mins, maxs, MASK_PLAYERSOLID, GCTraceEntityFilterPlayer);
 	
 	if (TR_DidHit())
 	{
@@ -138,7 +143,7 @@ stock bool TraceBlock(const float pos1[3], const float pos2[3], float result[3])
  * @param result			Resultant vector.
  * @return 					True on success, false otherwise.
  */
-stock bool GetEyeRayPosition(int client, float result[3], TraceEntityFilter filter, any data = 0, int flags = MASK_PLAYERSOLID)
+stock bool GCGetEyeRayPosition(int client, float result[3], TraceEntityFilter filter, any data = 0, int flags = MASK_PLAYERSOLID)
 {
 	float start[3];
 	float angle[3];
@@ -164,7 +169,7 @@ stock bool GetEyeRayPosition(int client, float result[3], TraceEntityFilter filt
  * @param distance			Maximum distance to trace.
  * @return 					True on success, false otherwise.
  */
-stock bool TraceEyeRayPositionDistance(int client, float result[3], float distance)
+stock bool GCTraceEyeRayPositionDistance(int client, float result[3], float distance)
 {
 	float start[3];
 	float angle[3];
@@ -183,7 +188,7 @@ stock bool TraceEyeRayPositionDistance(int client, float result[3], float distan
 	ScaleVector(endpoint, distance);
 	AddVectors(start, endpoint, endpoint);
 	
-	TR_TraceRayFilter(start, endpoint, MASK_PLAYERSOLID, RayType_EndPoint, TraceEntityFilterPlayer, client);
+	TR_TraceRayFilter(start, endpoint, MASK_PLAYERSOLID, RayType_EndPoint, GCTraceEntityFilterPlayer, client);
 	
 	if (TR_DidHit())
 	{
@@ -191,7 +196,7 @@ stock bool TraceEyeRayPositionDistance(int client, float result[3], float distan
 		return true;
 	}
 	
-	CopyVector(endpoint, result);
+	result = endpoint;
 	return false;
 }
 
@@ -205,7 +210,7 @@ stock bool TraceEyeRayPositionDistance(int client, float result[3], float distan
  * @param result			Resultant vector.
  * @return 					True on success, false otherwise.
  */
-stock bool TraceHullDirection(const float origin[3],
+stock bool GCTraceHullDirection(const float origin[3],
 	const float direction[3],
 	const float mins[3],
 	const float maxs[3],

@@ -4,13 +4,16 @@
 #endif
 #define _gamechaos_stocks_vectors_included
 
+#define GC_VECTORS_VERSION 0x01_00_01
+#define GC_VECTORS_VERSION_STRING "1.0.1"
+
 /**
- * Calculates the horizontal length of a vector.
+ * Calculates the horizontal (x, y) length of a vector.
  *
  * @param vec				Vector.
  * @return 					Vector length (magnitude).
  */
-stock float GetVectorHorLength(const float vec[3])
+stock float GCGetVectorLength2D(const float vec[3])
 {
 	float tempVec[3];
 	tempVec = vec;
@@ -20,20 +23,20 @@ stock float GetVectorHorLength(const float vec[3])
 }
 
 /**
- * Calculates the horizontal distance between 2 vectors.
+ * Calculates the horizontal (x, y) distance between 2 vectors.
  *
  * @param x					Vector 1.
  * @param y					Vector 2.
  * @param tolerance			How close the floats have to be to return true.
  * @return 					True on success, false otherwise.
  */
-stock float GetVectorHorDistance(const float x[3], const float y[3])
+stock float GCGetVectorDistance2D(const float x[3], const float y[3])
 {
 	float x2[3];
 	float y2[3];
 	
-	CopyVector(x, x2);
-	CopyVector(y, y2);
+	x2 = x;
+	y2 = y;
 	
 	x2[2] = 0.0;
 	y2[2] = 0.0;
@@ -42,14 +45,22 @@ stock float GetVectorHorDistance(const float x[3], const float y[3])
 }
 
 /**
- * Copies a vector to another vector.
+ * Checks if 2 vectors are exactly equal.
  *
- * @param source			Source vector.
- * @param dest				Destination vector.
+ * @param a					Vector 1.
+ * @param b					Vector 2.
+ * @return 					True on success, false otherwise.
  */
-stock void CopyVector(const float source[3], float dest[3])
+stock bool GCVectorsEqual(const float a[3], const float b[3])
 {
-	dest[0] = source[0];
-	dest[1] = source[1];
-	dest[2] = source[2];
+	bool result = true;
+	for (int i = 0; i < 3; i++)
+	{
+		if (a[i] != b[i])
+		{
+			result = false;
+			break;
+		}
+	}
+	return result;
 }
