@@ -1,0 +1,87 @@
+name: Build and release
+
+on:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  PLUGIN_FILE: distbugfix.sp
+  PLUGIN_NAME: distbugfix
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up SourcePawn
+        uses: rumblefrog/setup-sp@v1.3.1
+        with:
+          version: "1.11.x"
+
+      - name: Resolve release tag
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        env:
+          MANUAL_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            release_tag="${MANUAL_TAG}"
+          else
+            release_tag="${GITHUB_REF_NAME}"
+          fi
+          echo "RELEASE_TAG=${release_tag}" >> "${GITHUB_ENV}"
+
+      - name: Verify tag version
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        run: |
+          plugin_version="$(sed -n 's/^#define DISTBUG_VERSION "\(.*\)"/\1/p' include/distbugfix.inc)"
+          test "v${plugin_version}" = "${RELEASE_TAG}"
+
+      - name: Compile plugin
+        run: |
+          mkdir -p build/addons/sourcemod/plugins
+          spcomp -E -iinclude "${PLUGIN_FILE}" -o "build/addons/sourcemod/plugins/${PLUGIN_NAME}.smx"
+
+      - name: Package source
+        run: |
+          mkdir -p build/addons/sourcemod/scripting/include
+          cp "${PLUGIN_FILE}" build/addons/sourcemod/scripting/
+          cp -R include/. build/addons/sourcemod/scripting/include/
+          if [ -d "${PLUGIN_NAME}" ]; then
+            cp -R "${PLUGIN_NAME}" build/addons/sourcemod/scripting/
+          fi
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PLUGIN_NAME }}-${{ github.sha }}
+          path: build
+
+      - name: Create release archives
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        run: |
+          mkdir -p releases
+          tar -C build -czf "releases/${PLUGIN_NAME}-${RELEASE_TAG}.tar.gz" .
+          cd build
+          zip -r "../releases/${PLUGIN_NAME}-${RELEASE_TAG}.zip" .
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          generate_release_notes: true
+          files: releases/*
