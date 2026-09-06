@@ -9,7 +9,7 @@
 #define CHAT_PREFIX     "{d}[{l}GC{d}]"
 #define CONSOLE_PREFIX  "[GC]"
 #define CHAT_SPACER     " {d}|{g} "
-#define DISTBUG_VERSION "2.0.1"
+#define DISTBUG_VERSION "2.0.2"
 
 #define MAX_STRAFES     32
 #define MAX_EDGE        32.0
