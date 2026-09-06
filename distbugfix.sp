@@ -21,6 +21,25 @@
 #include <gamechaos>
 #include <distbugfix>
 
+enum struct JumpStatLabels
+{
+	char fwdRelease[32];
+	char edge[32];
+	char chatEdge[32];
+	bool hasEdge;
+	char block[32];
+	char chatBlock[32];
+	bool hasBlock;
+	char landEdge[32];
+	bool hasLandEdge;
+	char fog[32];
+	bool hasFOG;
+	char stamina[32];
+	bool hasStamina;
+	char offset[32];
+	bool hasOffset;
+}
+
 char g_jumpTypes[JumpType][] = {
 	"NONE",
 	"LJ",
@@ -196,42 +215,32 @@ public void Event_PlayerJump(Event event, const char[] name, bool dontBroadcast)
 		return;
 	}
 	
-	if (GCIsValidClient(client, true))
+	if (!GCIsValidClient(client, true))
 	{
-		bool duckbhop = !!(g_pd[client].flags & FL_DUCKING);
-		float groundOffset = g_pd[client].position[2] - g_pd[client].lastGroundPos[2];
-		JumpType jumpType = JUMPTYPE_NONE;
-		if (g_pd[client].framesOnGround <= MAX_BHOP_FRAMES)
-		{
-			if (g_pd[client].lastGroundPosWalkedOff && groundOffset < 0.0)
-			{
-				jumpType = JUMPTYPE_WJ;
-			}
-			else
-			{
-				if (duckbhop)
-				{
-					jumpType = JUMPTYPE_CBH;
-				}
-				else
-				{
-					jumpType = JUMPTYPE_BH;
-				}
-			}
-		}
-		else
-		{
-			jumpType = JUMPTYPE_LJ;
-		}
-		
-		if (jumpType != JUMPTYPE_NONE)
-		{
-			OnPlayerJumped(client, g_pd[client], jumpType);
-		}
-		
-		g_pd[client].lastGroundPos = g_pd[client].lastPosition;
-		g_pd[client].lastGroundPosWalkedOff = false;
+		return;
 	}
+	JumpType jumpType = GetGroundJumpType(g_pd[client]);
+	OnPlayerJumped(client, g_pd[client], jumpType);
+	g_pd[client].lastGroundPos = g_pd[client].lastPosition;
+	g_pd[client].lastGroundPosWalkedOff = false;
+}
+
+JumpType GetGroundJumpType(PlayerData pd)
+{
+	if (pd.framesOnGround > MAX_BHOP_FRAMES)
+	{
+		return JUMPTYPE_LJ;
+	}
+	float groundOffset = pd.position[2] - pd.lastGroundPos[2];
+	if (pd.lastGroundPosWalkedOff && groundOffset < 0.0)
+	{
+		return JUMPTYPE_WJ;
+	}
+	if (pd.flags & FL_DUCKING)
+	{
+		return JUMPTYPE_CBH;
+	}
+	return JUMPTYPE_BH;
 }
 
 public Action Command_Distbugversion(int client, int args)
@@ -376,43 +385,7 @@ public void PlayerPostThink(int client)
 	g_pd[client].lastStamina = g_pd[client].stamina;
 	g_pd[client].gravity = GetEntityGravity(client);
 	
-	// LJ stuff
-	if (IsSettingEnabled(client, SETTINGS_DISTBUG_ENABLED))
-	{
-		if (g_pd[client].framesInAir == 1)
-		{
-			if (!GCVectorsEqual(g_pd[client].lastGroundPos, g_pd[client].lastPosition))
-			{
-				g_pd[client].lastGroundPos = g_pd[client].lastPosition;
-				g_pd[client].lastGroundPosWalkedOff = true;
-			}
-		}
-		
-		bool forwardReleased = (g_pd[client].lastButtons & g_jumpDirForwardButton[g_pd[client].jumpDir])
-			&& !(g_pd[client].buttons & g_jumpDirForwardButton[g_pd[client].jumpDir]);
-		if (forwardReleased)
-		{
-			g_pd[client].fwdReleaseFrame = g_pd[client].tickCount;
-		}
-		
-		if (!g_pd[client].trackingJump
-			&& g_pd[client].movetype == MOVETYPE_WALK
-			&& g_pd[client].lastMovetype == MOVETYPE_LADDER)
-		{
-			OnPlayerJumped(client, g_pd[client], JUMPTYPE_LAJ);
-		}
-		
-		if (g_pd[client].framesOnGround == 1)
-		{
-			TrackJump(g_pd[client], g_failstatPD[client]);
-			OnPlayerLanded(client, g_pd[client], g_failstatPD[client]);
-		}
-		
-		if (g_pd[client].trackingJump)
-		{
-			TrackJump(g_pd[client], g_failstatPD[client]);
-		}
-	}
+	UpdateJumpTracking(client);
 	g_pd[client].tickCount++;
 	
 	
@@ -548,16 +521,22 @@ bool IsWishspeedMovingRight(float forwardspeed, float sidespeed, JumpDir jumpDir
 
 bool IsNewStrafe(PlayerData pd)
 {
+	if (pd.jumpAirtime == 1)
+	{
+		return false;
+	}
 	if (pd.jumpDir == JUMPDIR_FORWARDS || pd.jumpDir == JUMPDIR_BACKWARDS)
 	{
-		return ((pd.sidemove > 0.0 && pd.lastSidemove <= 0.0)
-				|| (pd.sidemove < 0.0 && pd.lastSidemove >= 0.0))
-				&& pd.jumpAirtime != 1;
+		return HasMovementReversed(pd.sidemove, pd.lastSidemove);
 	}
-	// else if (pd.jumpDir == JUMPDIR_LEFT || pd.jumpDir == JUMPDIR_RIGHT)
-	return ((pd.forwardmove > 0.0 && pd.lastForwardmove <= 0.0)
-				|| (pd.forwardmove < 0.0 && pd.lastForwardmove >= 0.0))
-				&& pd.jumpAirtime != 1;
+	return HasMovementReversed(pd.forwardmove, pd.lastForwardmove);
+}
+
+bool HasMovementReversed(float current, float previous)
+{
+	bool startedPositive = current > 0.0 && previous <= 0.0;
+	bool startedNegative = current < 0.0 && previous >= 0.0;
+	return startedPositive || startedNegative;
 }
 
 void TrackJump(PlayerData pd, PlayerData failstatPD)
@@ -566,58 +545,77 @@ void TrackJump(PlayerData pd, PlayerData failstatPD)
 	SetHudTextParams(-1.0, 0.2, 0.02, 255, 255, 255, 255, 0, 0.0, 0.0, 0.0);
 	ShowHudText(1, -1, "FOG: %i\njumpAirtime: %i\ntrackingJump: %i", pd.framesOnGround, pd.jumpAirtime, pd.trackingJump);
 #endif
-	
-	if (pd.framesOnGround > MAX_BHOP_FRAMES
-		&& pd.jumpAirtime && pd.trackingJump)
+
+	bool groundedJump = ShouldResetGroundedJump(pd);
+	if (groundedJump)
 	{
 		ResetJump(pd);
 	}
-	
-	if (pd.jumpType == JUMPTYPE_NONE
-		|| !g_jumpTypePrintable[pd.jumpType])
+
+	if (pd.jumpType == JUMPTYPE_NONE || !g_jumpTypePrintable[pd.jumpType])
 	{
 		pd.trackingJump = false;
 		return;
 	}
-	
-	if (pd.movetype != MOVETYPE_WALK
-		&& pd.movetype != MOVETYPE_LADDER)
+
+	if (pd.movetype != MOVETYPE_WALK && pd.movetype != MOVETYPE_LADDER)
 	{
 		ResetJump(pd);
 	}
-	
+
 	float frametime = GetTickInterval();
-	// crusty teleport detection
+	bool teleported = HasJumpTeleported(pd, frametime);
+	if (teleported)
 	{
-		float posDelta[3];
-		SubtractVectors(pd.position, pd.lastPosition, posDelta);
-		
-		float moveLength = GetVectorLength(posDelta);
-		// NOTE: 1.73205081 * sv_maxvelocity is the max velocity magnitude you can get.
-		if (moveLength > g_maxvelocity.FloatValue * 1.73205081 * frametime)
-		{
-			ResetJump(pd);
-			return;
-		}
+		ResetJump(pd);
+		return;
 	}
-	
+
 	int beamIndex = pd.jumpAirtime;
-	if (beamIndex < MAX_JUMP_FRAMES)
-	{
-		pd.jumpBeamX[beamIndex] = pd.position[0];
-		pd.jumpBeamY[beamIndex] = pd.position[1];
-		pd.jumpBeamColour[beamIndex] = JUMPBEAM_NEUTRAL;
-	}
+	RecordJumpBeamPosition(pd, beamIndex);
 	pd.jumpAirtime++;
-	
-	
+
 	float speed = GCGetVectorLength2D(pd.velocity);
+	float lastSpeed = GCGetVectorLength2D(pd.lastVelocity);
+	TrackJumpSpeed(pd, beamIndex, speed, lastSpeed);
+	TrackJumpInput(pd);
+	TrackStrafe(pd, speed, lastSpeed, frametime);
+	TrackJumpGraphs(pd);
+	SaveJumpFailstats(pd, failstatPD, frametime);
+	TrackJumpAirpath(pd);
+}
+
+bool ShouldResetGroundedJump(PlayerData pd)
+{
+	return pd.framesOnGround > MAX_BHOP_FRAMES && pd.jumpAirtime && pd.trackingJump;
+}
+
+bool HasJumpTeleported(PlayerData pd, float frametime)
+{
+	float posDelta[3];
+	SubtractVectors(pd.position, pd.lastPosition, posDelta);
+	float moveLength = GetVectorLength(posDelta);
+	float maximumDistance = g_maxvelocity.FloatValue * 1.73205081 * frametime;
+	return moveLength > maximumDistance;
+}
+
+void RecordJumpBeamPosition(PlayerData pd, int beamIndex)
+{
+	if (beamIndex >= MAX_JUMP_FRAMES)
+	{
+		return;
+	}
+	pd.jumpBeamX[beamIndex] = pd.position[0];
+	pd.jumpBeamY[beamIndex] = pd.position[1];
+	pd.jumpBeamColour[beamIndex] = JUMPBEAM_NEUTRAL;
+}
+
+void TrackJumpSpeed(PlayerData pd, int beamIndex, float speed, float lastSpeed)
+{
 	if (speed > pd.jumpMaxspeed)
 	{
 		pd.jumpMaxspeed = speed;
 	}
-	
-	float lastSpeed = GCGetVectorLength2D(pd.lastVelocity);
 	if (speed > lastSpeed)
 	{
 		pd.jumpSync++;
@@ -630,211 +628,238 @@ void TrackJump(PlayerData pd, PlayerData failstatPD)
 	{
 		pd.jumpBeamColour[beamIndex] = JUMPBEAM_LOSS;
 	}
-	
 	if (pd.flags & FL_DUCKING && beamIndex < MAX_JUMP_FRAMES)
 	{
 		pd.jumpBeamColour[beamIndex] = JUMPBEAM_DUCK;
 	}
-	
+}
+
+void TrackJumpInput(PlayerData pd)
+{
 	float height = pd.position[2] - pd.jumpPos[2];
 	if (height > pd.jumpHeight)
 	{
 		pd.jumpHeight = height;
 	}
-	
-	if (IsOverlapping(pd.buttons, pd.jumpDir))
+	bool overlapping = IsOverlapping(pd.buttons, pd.jumpDir);
+	if (overlapping)
 	{
 		pd.jumpOverlap++;
 	}
-	
-	if (IsDeadAirtime(pd.buttons, pd.jumpDir))
+	bool deadAirtime = IsDeadAirtime(pd.buttons, pd.jumpDir);
+	if (deadAirtime)
 	{
 		pd.jumpDeadair++;
 	}
-	
-	// strafestats!
-	if (pd.strafeCount + 1 < MAX_STRAFES)
+}
+
+void TrackStrafe(PlayerData pd, float speed, float lastSpeed, float frametime)
+{
+	if (pd.strafeCount + 1 >= MAX_STRAFES)
 	{
-		if (IsNewStrafe(pd))
-		{
-			pd.strafeCount++;
-		}
-		
-		int strafe = pd.strafeCount;
-		
-		pd.strafeAirtime[strafe]++;
-		
-		if (speed > lastSpeed)
-		{
-			pd.strafeSync[strafe] += 1.0;
-			pd.strafeGain[strafe] += speed - lastSpeed;
-		}
-		else if (speed < lastSpeed)
-		{
-			pd.strafeLoss[strafe] += lastSpeed - speed;
-		}
-		
-		if (speed > pd.strafeMax[strafe])
-		{
-			pd.strafeMax[strafe] = speed;
-		}
-		
-		if (IsOverlapping(pd.buttons, pd.jumpDir))
-		{
-			pd.strafeOverlap[strafe]++;
-		}
-		
-		if (IsDeadAirtime(pd.buttons, pd.jumpDir))
-		{
-			pd.strafeDeadair[strafe]++;
-		}
-		
-		// efficiency!
-		{
-			float maxWishspeed = 30.0;
-			float airaccelerate = g_airaccelerate.FloatValue;
-			// NOTE: Assume 250 maxspeed cos this is KZ!
-			float maxspeed = 250.0;
-			if (pd.flags & FL_DUCKING)
-			{
-				maxspeed *= 0.34;
-			}
-			else if (pd.buttons & IN_SPEED)
-			{
-				maxspeed *= 0.52;
-			}
-			
-			if (pd.lastStamina > 0)
-			{
-				float speedScale = GCFloatClamp(1.0 - pd.lastStamina / 100.0, 0.0, 1.0);
-				speedScale *= speedScale;
-				maxspeed *= speedScale;
-			}
-			
-			// calculate zvel 1 tick before pd.lastVelocity and during movement processing
-			float zvel = pd.lastVelocity[2] + (g_gravity.FloatValue * frametime * 0.5 * pd.gravity);
-			if (zvel > 0.0 && zvel <= 140.0)
-			{
-				maxspeed *= 0.25;
-			}
-			
-			float yawdiff = FloatAbs(GCNormaliseYaw(pd.angles[1] - pd.lastAngles[1]));
-			float perfectYawDiff = yawdiff;
-			if (lastSpeed > 0.0)
-			{
-				float accelspeed = airaccelerate * maxspeed * frametime;
-				if (accelspeed > maxWishspeed)
-				{
-					accelspeed = maxWishspeed;
-				}
-				if (lastSpeed >= maxWishspeed)
-				{
-					perfectYawDiff = RadToDeg(ArcSine(accelspeed / lastSpeed));
-				}
-				else
-				{
-					perfectYawDiff = 0.0;
-				}
-			}
-			float efficiency = 100.0;
-			if (perfectYawDiff != 0.0)
-			{
-				efficiency = (yawdiff - perfectYawDiff) / perfectYawDiff * 100.0 + 100.0;
-			}
-			
-			pd.strafeAvgEfficiency[strafe] += efficiency;
-			pd.strafeAvgEfficiencyCount[strafe]++;
-			if (efficiency > pd.strafeMaxEfficiency[strafe])
-			{
-				pd.strafeMaxEfficiency[strafe] = efficiency;
-			}
-			
-			DEBUG_CONSOLE(1, "%i\t%f\t%f\t%f\t%f\t%f", strafe, (yawdiff - perfectYawDiff), pd.sidemove, yawdiff, perfectYawDiff, speed)
-		}
+		return;
 	}
-	
-	// strafe type and mouse graph
-	if (pd.jumpAirtime - 1 < MAX_JUMP_FRAMES)
+	bool newStrafe = IsNewStrafe(pd);
+	if (newStrafe)
 	{
-		StrafeType strafeType = STRAFETYPE_NONE;
-		
-		bool moveLeft = !!(pd.buttons & g_jumpDirLeftButton[pd.jumpDir]);
-		bool moveRight = !!(pd.buttons & g_jumpDirRightButton[pd.jumpDir]);
-		
-		bool velLeft = IsWishspeedMovingLeft(pd.forwardmove, pd.sidemove, pd.jumpDir);
-		bool velRight = IsWishspeedMovingRight(pd.forwardmove, pd.sidemove, pd.jumpDir);
-		bool velIsZero = !velLeft && !velRight;
-		
-		if (moveLeft && !moveRight && velLeft)
-		{
-			strafeType = STRAFETYPE_LEFT;
-		}
-		else if (moveRight && !moveLeft && velRight)
-		{
-			strafeType = STRAFETYPE_RIGHT;
-		}
-		else if (moveRight && !moveLeft && velRight)
-		{
-			strafeType = STRAFETYPE_LEFT;
-		}
-		else if (moveRight && moveLeft && velIsZero)
-		{
-			strafeType = STRAFETYPE_OVERLAP;
-		}
-		else if (moveRight && moveLeft && velLeft)
-		{
-			strafeType = STRAFETYPE_OVERLAP_LEFT;
-		}
-		else if (moveRight && moveLeft && velRight)
-		{
-			strafeType = STRAFETYPE_OVERLAP_RIGHT;
-		}
-		else if (!moveRight && !moveLeft && velIsZero)
-		{
-			strafeType = STRAFETYPE_NONE;
-		}
-		else if (!moveRight && !moveLeft && velLeft)
-		{
-			strafeType = STRAFETYPE_NONE_LEFT;
-		}
-		else if (!moveRight && !moveLeft && velRight)
-		{
-			strafeType = STRAFETYPE_NONE_RIGHT;
-		}
-		
-		pd.strafeGraph[pd.jumpAirtime - 1] = strafeType;
-		float yawDiff = GCNormaliseYaw(pd.angles[1] - pd.lastAngles[1]);
-		// Offset index by 2 to align mouse movement with button presses.
-		int yawIndex = GCIntMax(pd.jumpAirtime - 2, 0);
-		pd.mouseGraph[yawIndex] = yawDiff;
+		pd.strafeCount++;
 	}
-	// check for failstat after jump tracking is done
-	float duckedPos[3];
-	duckedPos = pd.position;
-	if (!(pd.flags & FL_DUCKING))
+	int strafe = pd.strafeCount;
+	pd.strafeAirtime[strafe]++;
+	if (speed > lastSpeed)
 	{
-		duckedPos[2] += 9.0;
+		pd.strafeSync[strafe] += 1.0;
+		pd.strafeGain[strafe] += speed - lastSpeed;
 	}
-	
-	// only save failed jump if we're at the fail threshold
-	if ((pd.position[2] < pd.jumpPos[2])
-		&& (pd.position[2] > pd.jumpPos[2] + (pd.velocity[2] * frametime)))
+	else if (speed < lastSpeed)
+	{
+		pd.strafeLoss[strafe] += lastSpeed - speed;
+	}
+	if (speed > pd.strafeMax[strafe])
+	{
+		pd.strafeMax[strafe] = speed;
+	}
+	bool overlapping = IsOverlapping(pd.buttons, pd.jumpDir);
+	if (overlapping)
+	{
+		pd.strafeOverlap[strafe]++;
+	}
+	bool deadAirtime = IsDeadAirtime(pd.buttons, pd.jumpDir);
+	if (deadAirtime)
+	{
+		pd.strafeDeadair[strafe]++;
+	}
+	TrackStrafeEfficiency(pd, strafe, lastSpeed, frametime);
+}
+
+float GetStrafeBaseSpeed(PlayerData pd)
+{
+	if (pd.flags & FL_DUCKING)
+	{
+		return 250.0 * 0.34;
+	}
+	if (pd.buttons & IN_SPEED)
+	{
+		return 250.0 * 0.52;
+	}
+	return 250.0;
+}
+
+float GetStrafeStaminaScale(PlayerData pd)
+{
+	if (!(pd.lastStamina > 0))
+	{
+		return 1.0;
+	}
+	float remainingStamina = 1.0 - pd.lastStamina / 100.0;
+	float speedScale = GCFloatClamp(remainingStamina, 0.0, 1.0);
+	return speedScale * speedScale;
+}
+
+float GetStrafeMaxspeed(PlayerData pd, float frametime)
+{
+	float baseSpeed = GetStrafeBaseSpeed(pd);
+	float staminaScale = GetStrafeStaminaScale(pd);
+	float maxspeed = baseSpeed * staminaScale;
+	float zvel = pd.lastVelocity[2] + (g_gravity.FloatValue * frametime * 0.5 * pd.gravity);
+	if (zvel > 0.0 && zvel <= 140.0)
+	{
+		return maxspeed * 0.25;
+	}
+	return maxspeed;
+}
+
+float GetPerfectStrafeYaw(float lastSpeed, float yawdiff, float maxspeed, float frametime)
+{
+	if (!(lastSpeed > 0.0))
+	{
+		return yawdiff;
+	}
+	float airaccelerate = g_airaccelerate.FloatValue;
+	float acceleration = airaccelerate * maxspeed * frametime;
+	float accelspeed = acceleration > 30.0 ? 30.0 : acceleration;
+	if (lastSpeed < 30.0)
+	{
+		return 0.0;
+	}
+	float ratio = accelspeed / lastSpeed;
+	float angle = ArcSine(ratio);
+	return RadToDeg(angle);
+}
+
+float GetStrafeEfficiency(float yawdiff, float perfectYawDiff)
+{
+	if (perfectYawDiff == 0.0)
+	{
+		return 100.0;
+	}
+	return (yawdiff - perfectYawDiff) / perfectYawDiff * 100.0 + 100.0;
+}
+
+void TrackStrafeEfficiency(PlayerData pd, int strafe, float lastSpeed, float frametime)
+{
+	float maxspeed = GetStrafeMaxspeed(pd, frametime);
+	float yawChange = pd.angles[1] - pd.lastAngles[1];
+	float normalizedYaw = GCNormaliseYaw(yawChange);
+	float yawdiff = FloatAbs(normalizedYaw);
+	float perfectYawDiff = GetPerfectStrafeYaw(lastSpeed, yawdiff, maxspeed, frametime);
+	float efficiency = GetStrafeEfficiency(yawdiff, perfectYawDiff);
+	pd.strafeAvgEfficiency[strafe] += efficiency;
+	pd.strafeAvgEfficiencyCount[strafe]++;
+	if (efficiency > pd.strafeMaxEfficiency[strafe])
+	{
+		pd.strafeMaxEfficiency[strafe] = efficiency;
+	}
+#if defined(DEBUG)
+	float speed = GCGetVectorLength2D(pd.velocity);
+	float yawError = yawdiff - perfectYawDiff;
+	DEBUG_CONSOLE(1, "%i\t%f\t%f\t%f\t%f\t%f", strafe, yawError, pd.sidemove, yawdiff, perfectYawDiff, speed)
+#endif
+}
+
+StrafeType GetOverlapStrafeType(bool velLeft, bool velRight)
+{
+	if (velLeft)
+	{
+		return STRAFETYPE_OVERLAP_LEFT;
+	}
+	if (velRight)
+	{
+		return STRAFETYPE_OVERLAP_RIGHT;
+	}
+	return STRAFETYPE_OVERLAP;
+}
+
+StrafeType GetIdleStrafeType(bool velLeft, bool velRight)
+{
+	if (velLeft)
+	{
+		return STRAFETYPE_NONE_LEFT;
+	}
+	if (velRight)
+	{
+		return STRAFETYPE_NONE_RIGHT;
+	}
+	return STRAFETYPE_NONE;
+}
+
+StrafeType GetGraphStrafeType(PlayerData pd)
+{
+	bool moveLeft = !!(pd.buttons & g_jumpDirLeftButton[pd.jumpDir]);
+	bool moveRight = !!(pd.buttons & g_jumpDirRightButton[pd.jumpDir]);
+	bool velLeft = IsWishspeedMovingLeft(pd.forwardmove, pd.sidemove, pd.jumpDir);
+	bool velRight = IsWishspeedMovingRight(pd.forwardmove, pd.sidemove, pd.jumpDir);
+	if (moveLeft)
+	{
+		if (moveRight)
+		{
+			return GetOverlapStrafeType(velLeft, velRight);
+		}
+		return velLeft ? STRAFETYPE_LEFT : STRAFETYPE_NONE;
+	}
+	if (moveRight)
+	{
+		return velRight ? STRAFETYPE_RIGHT : STRAFETYPE_NONE;
+	}
+	return GetIdleStrafeType(velLeft, velRight);
+}
+
+void TrackJumpGraphs(PlayerData pd)
+{
+	int frame = pd.jumpAirtime - 1;
+	if (frame >= MAX_JUMP_FRAMES)
+	{
+		return;
+	}
+	StrafeType strafeType = GetGraphStrafeType(pd);
+	pd.strafeGraph[frame] = strafeType;
+	float yawChange = pd.angles[1] - pd.lastAngles[1];
+	float yawDiff = GCNormaliseYaw(yawChange);
+	int mouseFrame = pd.jumpAirtime - 2;
+	int yawIndex = GCIntMax(mouseFrame, 0);
+	pd.mouseGraph[yawIndex] = yawDiff;
+}
+
+void SaveJumpFailstats(PlayerData pd, PlayerData failstatPD, float frametime)
+{
+	float nextHeight = pd.jumpPos[2] + (pd.velocity[2] * frametime);
+	if (pd.position[2] < pd.jumpPos[2] && pd.position[2] > nextHeight)
 	{
 		pd.jumpGotFailstats = true;
 		failstatPD = pd;
 	}
-	
-	// airpath.
-	// NOTE: Track airpath after failstatPD has been saved, so
-	// we don't track the last frame of failstats. That should
-	// happen inside of FinishTrackingJump, because we need the real landing position.
-	if (!pd.framesOnGround)
+}
+
+void TrackJumpAirpath(PlayerData pd)
+{
+	if (pd.framesOnGround)
 	{
-		// NOTE: there's a special case for landing frame.
-		float delta[3];
-		SubtractVectors(pd.position, pd.lastPosition, delta);
-		pd.jumpAirpath += GCGetVectorLength2D(delta);
+		return;
 	}
+	float delta[3];
+	SubtractVectors(pd.position, pd.lastPosition, delta);
+	float distance = GCGetVectorLength2D(delta);
+	pd.jumpAirpath += distance;
 }
 
 void OnPlayerFailstat(int client, PlayerData pd)
@@ -895,30 +920,8 @@ void OnPlayerJumped(int client, PlayerData pd, JumpType jumpType)
 	
 	// DEBUG_CHAT(1, "jump type: %s last jump type: %s", g_jumpTypes[jumpType], g_jumpTypes[pd.lastJumpType])
 	
-	// jump direction
-	float speed = GCGetVectorLength2D(pd.velocity);
-	pd.jumpDir = JUMPDIR_FORWARDS;
-	// NOTE: Ladderjump pres can be super wild and can generate random
-	// jump directions, so default to forward for ladderjumps.
-	if (speed > 50.0 && pd.jumpType != JUMPTYPE_LAJ)
-	{
-		float velDir = RadToDeg(ArcTangent2(pd.velocity[1], pd.velocity[0]));
-		float dir = GCNormaliseYaw(pd.angles[1] - velDir);
-		
-		if (GCIsFloatInRange(dir, 45.0, 135.0))
-		{
-			pd.jumpDir = JUMPDIR_RIGHT;
-		}
-		if (GCIsFloatInRange(dir, -135.0, -45.0))
-		{
-			pd.jumpDir = JUMPDIR_LEFT;
-		}
-		else if (dir > 135.0 || dir < -135.0)
-		{
-			pd.jumpDir = JUMPDIR_BACKWARDS;
-		}
-	}
-	
+	pd.jumpDir = GetJumpDirection(pd);
+
 	if (jumpType != JUMPTYPE_LAJ)
 	{
 		pd.jumpFrame = pd.tickCount;
@@ -1016,52 +1019,8 @@ void OnPlayerLanded(int client, PlayerData pd, PlayerData failstatPD)
 		return;
 	}
 	
-	float landOrigin[3];
-	float gravity = g_gravity.FloatValue * pd.gravity;
-	float frametime = GetTickInterval();
-	float fixedVelocity[3];
-	float airOrigin[3];
-	
-	// fix incorrect landing position
-	float lastPosition[3];
-	lastPosition = pd.lastPosition;
-	bool lastDucking = !!(pd.lastFlags & FL_DUCKING);
-	bool ducking = !!(pd.flags & FL_DUCKING);
-	if (!lastDucking && ducking)
-	{
-		lastPosition[2] += 9.0;
-	}
-	else if (lastDucking && !ducking)
-	{
-		lastPosition[2] -= 9.0;
-	}
-	
-	bool isBugged = pd.lastPosition[2] - pd.landGroundZ < 2.0;
-	if (isBugged)
-	{
-		fixedVelocity = pd.velocity;
-		// NOTE: The 0.5 here removes half the gravity in a tick, because
-		// in pmove code half the gravity is applied before movement calculation and the other half after it's finished.
-		// We're trying to fix a bug that happens in the middle of movement code.
-		fixedVelocity[2] = pd.lastVelocity[2] - gravity * 0.5 * frametime;
-		airOrigin = lastPosition;
-	}
-	else
-	{
-		// NOTE: calculate current frame's z velocity
-		float tempVel[3];
-		tempVel = pd.velocity;
-		tempVel[2] = pd.lastVelocity[2] - gravity * 0.5 * frametime;
-		// NOTE: calculate velocity after the current frame.
-		fixedVelocity = tempVel;
-		fixedVelocity[2] -= gravity * frametime;
-		
-		airOrigin = pd.position;
-	}
-	
-	GetRealLandingOrigin(pd.landGroundZ, airOrigin, fixedVelocity, landOrigin);
-	pd.landPos = landOrigin;
-	
+	CorrectLandingPosition(pd);
+
 	pd.jumpDistance = (GCGetVectorDistance2D(pd.jumpPos, pd.landPos));
 	if (pd.jumpType != JUMPTYPE_LAJ)
 	{
@@ -1260,140 +1219,87 @@ void FinishTrackingJump(int client, PlayerData pd)
 
 void PrintStats(int client, PlayerData pd)
 {
-	// beams!
-	if (IsSettingEnabled(client, SETTINGS_SHOW_VEER_BEAM))
-	{
-		float beamEnd[3];
-		beamEnd[0] = pd.landPos[0];
-		beamEnd[1] = pd.jumpPos[1];
-		beamEnd[2] = pd.landPos[2];
-		float jumpPos[3];
-		float landPos[3];
-		for (int i = 0; i < 3; i++)
-		{
-			jumpPos[i] = pd.jumpPos[i];
-			landPos[i] = pd.landPos[i];
-		}
-		
-		GCTE_SetupBeamPoints(.start = jumpPos, .end = landPos, .modelIndex = g_beamSprite,
-							 .life = 5.0, .width = 1.0, .endWidth = 1.0, .colour = {255, 255, 255, 95});
-		TE_SendToClient(client);
-		
-		// x axis
-		GCTE_SetupBeamPoints(.start = jumpPos, .end = beamEnd, .modelIndex = g_beamSprite,
-							 .life = 5.0, .width = 1.0, .endWidth = 1.0, .colour = {255, 0, 255, 95});
-		TE_SendToClient(client);
-		// y axis
-		GCTE_SetupBeamPoints(.start = landPos, .end = beamEnd, .modelIndex = g_beamSprite,
-							 .life = 5.0, .width = 1.0, .endWidth = 1.0, .colour = {0, 255, 0, 95});
-		TE_SendToClient(client);
-	}
-	
-	if (IsSettingEnabled(client, SETTINGS_SHOW_JUMP_BEAM))
-	{
-		float beamPos[3];
-		float lastBeamPos[3];
-		beamPos[0] = pd.jumpPos[0];
-		beamPos[1] = pd.jumpPos[1];
-		beamPos[2] = pd.jumpPos[2];
-		for (int i = 1; i < pd.jumpAirtime && i < MAX_JUMP_FRAMES; i++)
-		{
-			lastBeamPos = beamPos;
-			beamPos[0] = pd.jumpBeamX[i];
-			beamPos[1] = pd.jumpBeamY[i];
-			
-			int colour[4] = {255, 191, 0, 255};
-			if (pd.jumpBeamColour[i] == JUMPBEAM_LOSS)
-			{
-				colour = {255, 0, 255, 255};
-			}
-			else if (pd.jumpBeamColour[i] == JUMPBEAM_GAIN)
-			{
-				colour = {0, 127, 0, 255};
-			}
-			else if (pd.jumpBeamColour[i] == JUMPBEAM_DUCK)
-			{
-				colour = {0, 31, 127, 255};
-			}
-			
-			GCTE_SetupBeamPoints(.start = lastBeamPos, .end = beamPos, .modelIndex = g_beamSprite,
-							 .life = 5.0, .width = 1.0, .endWidth = 1.0, .colour = colour);
-			TE_SendToClient(client);
-		}
-	}
-	
-	char fwdRelease[32] = "";
-	if (pd.jumpFwdRelease == 0)
-	{
-		FormatEx(fwdRelease, sizeof(fwdRelease), "Fwd: {gr}0");
-	}
-	else if (GCIntAbs(pd.jumpFwdRelease) > 16)
-	{
-		FormatEx(fwdRelease, sizeof(fwdRelease), "Fwd: {dr}No");
-	}
-	else if (pd.jumpFwdRelease > 0)
-	{
-		FormatEx(fwdRelease, sizeof(fwdRelease), "Fwd: {dr}+%i", pd.jumpFwdRelease);
-	}
-	else
-	{
-		FormatEx(fwdRelease, sizeof(fwdRelease), "Fwd: {sb}%i", pd.jumpFwdRelease);
-	}
-	
-	char edge[32] = "";
-	char chatEdge[32] = "";
-	bool hasEdge = false;
+	PrintVeerBeam(client, pd);
+
+	PrintJumpBeam(client, pd);
+
+	JumpStatLabels labels;
+	BuildJumpStatLabels(pd, labels);
+	PrintChatStats(client, pd, labels);
+	PrintConsoleStats(client, pd, labels);
+	PrintStrafeStats(client, pd);
+	PrintJumpGraphs(client, pd);
+}
+
+void BuildJumpStatLabels(PlayerData pd, JumpStatLabels labels)
+{
+	FormatForwardRelease(pd.jumpFwdRelease, labels.fwdRelease, sizeof(labels.fwdRelease));
+
 	if (pd.jumpEdge >= 0.0 && pd.jumpEdge < MAX_EDGE)
 	{
-		FormatEx(edge, sizeof(edge), "Edge: %.4f", pd.jumpEdge);
-		FormatEx(chatEdge, sizeof(chatEdge), "Edge: {l}%.2f{g}", pd.jumpEdge);
-		hasEdge = true;
+		FormatEx(labels.edge, sizeof(labels.edge), "Edge: %.4f", pd.jumpEdge);
+		FormatEx(labels.chatEdge, sizeof(labels.chatEdge), "Edge: {l}%.2f{g}", pd.jumpEdge);
+		labels.hasEdge = true;
 	}
 	
-	char block[32] = "";
-	char chatBlock[32] = "";
-	bool hasBlock = false;
 	if (GCIsFloatInRange(pd.jumpBlockDist,
 		g_jumpRange[pd.jumpType][0].FloatValue,
 		g_jumpRange[pd.jumpType][1].FloatValue))
 	{
-		FormatEx(block, sizeof(block), "Block: %i", RoundFloat(pd.jumpBlockDist));
-		FormatEx(chatBlock, sizeof(chatBlock), "({l}%i{g})", RoundFloat(pd.jumpBlockDist));
-		hasBlock = true;
+		FormatEx(labels.block, sizeof(labels.block), "Block: %i", RoundFloat(pd.jumpBlockDist));
+		FormatEx(labels.chatBlock, sizeof(labels.chatBlock), "({l}%i{g})", RoundFloat(pd.jumpBlockDist));
+		labels.hasBlock = true;
 	}
 	
-	char landEdge[32] = "";
-	bool hasLandEdge = false;
 	if (FloatAbs(pd.jumpLandEdge) < MAX_EDGE)
 	{
-		FormatEx(landEdge, sizeof(landEdge), "Land Edge: %.4f", pd.jumpLandEdge);
-		hasLandEdge = true;
+		FormatEx(labels.landEdge, sizeof(labels.landEdge), "Land Edge: %.4f", pd.jumpLandEdge);
+		labels.hasLandEdge = true;
 	}
 	
-	char fog[32];
-	bool hasFOG = false;
 	if (pd.prespeedFog <= MAX_BHOP_FRAMES && pd.prespeedFog >= 0)
 	{
-		FormatEx(fog, sizeof(fog), "FOG: %i", pd.prespeedFog);
-		hasFOG = true;
+		FormatEx(labels.fog, sizeof(labels.fog), "FOG: %i", pd.prespeedFog);
+		labels.hasFOG = true;
 	}
 	
-	char stamina[32];
-	bool hasStamina = false;
 	if (pd.prespeedStamina != 0.0)
 	{
-		FormatEx(stamina, sizeof(stamina), "Stamina: %.1f", pd.prespeedStamina);
-		hasStamina = true;
+		FormatEx(labels.stamina, sizeof(labels.stamina), "Stamina: %.1f", pd.prespeedStamina);
+		labels.hasStamina = true;
 	}
 	
-	char offset[32];
-	bool hasOffset = false;
 	if (pd.jumpGroundZ != pd.jumpPos[2])
 	{
-		FormatEx(offset, sizeof(offset), "Ground offset: %.4f", pd.jumpPos[2] - pd.jumpGroundZ);
-		hasOffset = true;
+		FormatEx(labels.offset, sizeof(labels.offset), "Ground offset: %.4f", pd.jumpPos[2] - pd.jumpGroundZ);
+		labels.hasOffset = true;
 	}
 	
+}
+
+void FormatForwardRelease(int release, char[] output, int length)
+{
+	if (release == 0)
+	{
+		FormatEx(output, length, "Fwd: {gr}0");
+	}
+	else if (GCIntAbs(release) > 16)
+	{
+		FormatEx(output, length, "Fwd: {dr}No");
+	}
+	else if (release > 0)
+	{
+		FormatEx(output, length, "Fwd: {dr}+%i", release);
+	}
+	else
+	{
+		FormatEx(output, length, "Fwd: {sb}%i", release);
+	}
+
+}
+
+void PrintChatStats(int client, PlayerData pd, JumpStatLabels labels)
+{
 	char chatStats[1024];
 	if (!IsSettingEnabled(client, SETTINGS_ADV_CHAT_STATS))
 	{
@@ -1403,10 +1309,10 @@ void PrintStats(int client, PlayerData pd)
 			g_jumpTypes[pd.jumpType],
 			pd.jumpDistance,
 			
-			chatEdge,
-			hasEdge ? CHAT_SPACER : "",
+			labels.chatEdge,
+			labels.hasEdge ? CHAT_SPACER : "",
 			pd.jumpVeer,
-			fwdRelease,
+			labels.fwdRelease,
 			pd.jumpSync,
 			pd.jumpMaxspeed
 		);
@@ -1420,10 +1326,10 @@ void PrintStats(int client, PlayerData pd)
 			g_jumpTypes[pd.jumpType],
 			pd.jumpDistance,
 			
-			chatEdge,
-			hasBlock ? " " : "",
-			chatBlock,
-			hasEdge ? CHAT_SPACER : "",
+			labels.chatEdge,
+			labels.hasBlock ? " " : "",
+			labels.chatBlock,
+			labels.hasEdge ? CHAT_SPACER : "",
 			pd.jumpPrespeed,
 			pd.jumpAirpath,
 			pd.jumpMaxspeed,
@@ -1431,7 +1337,7 @@ void PrintStats(int client, PlayerData pd)
 			pd.jumpSync,
 			pd.jumpType != JUMPTYPE_LAJ ? "Jump Ang: " : "Air: ",
 			pd.jumpType != JUMPTYPE_LAJ ? RoundFloat(pd.jumpJumpoffAngle) : pd.jumpAirtime,
-			fwdRelease,
+			labels.fwdRelease,
 			pd.jumpOverlap,
 			pd.jumpDeadair
 		);
@@ -1439,7 +1345,10 @@ void PrintStats(int client, PlayerData pd)
 	
 	ClientAndSpecsPrintChat(client, "%s", chatStats);
 	
-	// TODO: remove jump direction from ladderjumps
+}
+
+void PrintConsoleStats(int client, PlayerData pd, JumpStatLabels labels)
+{
 	char consoleStats[1024];
 	FormatEx(consoleStats, sizeof(consoleStats), "\n"...CONSOLE_PREFIX..." %s%s: %.5f [%s%s%s%sVeer: %.4f | %s | Sync: %.2f | Max: %.3f]\n"...\
 												   "[%s%sPre: %.4f | OL/DA: %i/%i | Jumpoff Angle: %.3f | Airpath: %.4f]\n"...\
@@ -1447,17 +1356,17 @@ void PrintStats(int client, PlayerData pd)
 		pd.failedJump ? "FAILED " : "",
 		g_jumpTypes[pd.jumpType],
 		pd.jumpDistance,
-		block,
-		hasBlock ? " | " : "",
-		edge,
-		hasEdge ? " | " : "",
+		labels.block,
+		labels.hasBlock ? " | " : "",
+		labels.edge,
+		labels.hasEdge ? " | " : "",
 		pd.jumpVeer,
-		fwdRelease,
+		labels.fwdRelease,
 		pd.jumpSync,
 		pd.jumpMaxspeed,
 		
-		landEdge,
-		hasLandEdge ? " | " : "",
+		labels.landEdge,
+		labels.hasLandEdge ? " | " : "",
 		pd.jumpPrespeed,
 		pd.jumpOverlap,
 		pd.jumpDeadair,
@@ -1467,18 +1376,106 @@ void PrintStats(int client, PlayerData pd)
 		pd.strafeCount + 1,
 		pd.jumpAirtime,
 		g_jumpDirString[pd.jumpDir],
-		fog,
-		hasFOG ? " | " : "",
+		labels.fog,
+		labels.hasFOG ? " | " : "",
 		pd.jumpHeight,
-		hasOffset ? " | " : "",
-		offset,
-		hasStamina ? " | " : "",
-		stamina
+		labels.hasOffset ? " | " : "",
+		labels.offset,
+		labels.hasStamina ? " | " : "",
+		labels.stamina
 	);
 	
 	CRemoveTags(consoleStats, sizeof(consoleStats));
 	ClientAndSpecsPrintConsole(client, consoleStats);
 	
+}
+
+void PrintJumpGraphs(int client, PlayerData pd)
+{
+	char strafeLeft[512];
+	char strafeRight[512];
+	char mouseLeft[512];
+	char mouseRight[512];
+	char hudStrafeLeft[4096];
+	char hudStrafeRight[4096];
+	char hudMouse[4096];
+	BuildStrafeGraph(pd, true, strafeLeft, sizeof(strafeLeft), hudStrafeLeft, sizeof(hudStrafeLeft));
+	BuildStrafeGraph(pd, false, strafeRight, sizeof(strafeRight), hudStrafeRight, sizeof(hudStrafeRight));
+	BuildMouseGraph(pd, mouseLeft, sizeof(mouseLeft), mouseRight, sizeof(mouseRight), hudMouse, sizeof(hudMouse));
+
+	bool showHudGraph = IsSettingEnabled(client, SETTINGS_SHOW_HUD_GRAPH);
+	if (showHudGraph)
+	{
+		// worst case scenario is roughly 11000 characters :D
+		char strafeGraph[11000];
+		FormatEx(strafeGraph, sizeof(strafeGraph), "<u><span class='fontSize-s'>%s<br>%s<br>%s", hudStrafeLeft, hudStrafeRight, hudMouse);
+
+		// TODO: sometimes just after a previous panel has faded out a new panel can't be shown, fix!
+		ShowPanel(client, 3, strafeGraph);
+	}
+	if (!IsSettingEnabled(client, SETTINGS_DISABLE_STRAFE_GRAPH))
+	{
+		ClientAndSpecsPrintConsole(client, "\nStrafe keys:\nL: %s\nR: %s", strafeLeft, strafeRight);
+		ClientAndSpecsPrintConsole(client, "Mouse movement:\nL: %s\nR: %s\n\n", mouseLeft, mouseRight);
+	}
+}
+
+void PrintVeerBeam(int client, PlayerData pd)
+{
+	if (IsSettingEnabled(client, SETTINGS_SHOW_VEER_BEAM))
+	{
+		float beamEnd[3];
+		beamEnd[0] = pd.landPos[0];
+		beamEnd[1] = pd.jumpPos[1];
+		beamEnd[2] = pd.landPos[2];
+		float jumpPos[3];
+		float landPos[3];
+		for (int i = 0; i < 3; i++)
+		{
+			jumpPos[i] = pd.jumpPos[i];
+			landPos[i] = pd.landPos[i];
+		}
+
+		GCTE_SetupBeamPoints(.start = jumpPos, .end = landPos, .modelIndex = g_beamSprite,
+							 .life = 5.0, .width = 1.0, .endWidth = 1.0, .colour = {255, 255, 255, 95});
+		TE_SendToClient(client);
+
+		GCTE_SetupBeamPoints(.start = jumpPos, .end = beamEnd, .modelIndex = g_beamSprite,
+							 .life = 5.0, .width = 1.0, .endWidth = 1.0, .colour = {255, 0, 255, 95});
+		TE_SendToClient(client);
+		GCTE_SetupBeamPoints(.start = landPos, .end = beamEnd, .modelIndex = g_beamSprite,
+							 .life = 5.0, .width = 1.0, .endWidth = 1.0, .colour = {0, 255, 0, 95});
+		TE_SendToClient(client);
+	}
+}
+
+void PrintJumpBeam(int client, PlayerData pd)
+{
+	if (IsSettingEnabled(client, SETTINGS_SHOW_JUMP_BEAM))
+	{
+		float beamPos[3];
+		float lastBeamPos[3];
+		beamPos[0] = pd.jumpPos[0];
+		beamPos[1] = pd.jumpPos[1];
+		beamPos[2] = pd.jumpPos[2];
+		for (int i = 1; i < pd.jumpAirtime && i < MAX_JUMP_FRAMES; i++)
+		{
+			lastBeamPos = beamPos;
+			beamPos[0] = pd.jumpBeamX[i];
+			beamPos[1] = pd.jumpBeamY[i];
+
+			int colour[4];
+			GetJumpBeamColour(pd.jumpBeamColour[i], colour);
+
+			GCTE_SetupBeamPoints(.start = lastBeamPos, .end = beamPos, .modelIndex = g_beamSprite,
+							 .life = 5.0, .width = 1.0, .endWidth = 1.0, .colour = colour);
+			TE_SendToClient(client);
+		}
+	}
+}
+
+void PrintStrafeStats(int client, PlayerData pd)
+{
 	if (!IsSettingEnabled(client, SETTINGS_DISABLE_STRAFE_STATS))
 	{
 		ClientAndSpecsPrintConsole(client, " #.  Sync    Gain   Loss   Max  Air  OL  DA  AvgGain  Avg efficiency, (max efficiency)");
@@ -1499,132 +1496,241 @@ void PrintStats(int client, PlayerData pd)
 			);
 		}
 	}
-	
-	// hud text
-	char strafeLeft[512] = "";
-	int slIndex;
-	char strafeRight[512] = "";
-	int srIndex;
-	char mouseLeft[512] = "";
-	int mlIndex;
-	char mouseRight[512] = "";
-	int mrIndex;
-	
-	char hudStrafeLeft[4096] = "";
-	int hslIndex;
-	char hudStrafeRight[4096] = "";
-	int hsrIndex;
-	char hudMouse[4096] = "";
-	int hmIndex;
-	
-	char mouseColours[][] = {
+}
+
+StrafeType GetDirectionalStrafeType(StrafeType type, bool left)
+{
+	if (left)
+	{
+		if (type == STRAFETYPE_RIGHT || type == STRAFETYPE_NONE_RIGHT || type == STRAFETYPE_OVERLAP_RIGHT)
+		{
+			return STRAFETYPE_NONE;
+		}
+		return type;
+	}
+	if (type == STRAFETYPE_LEFT || type == STRAFETYPE_NONE_LEFT || type == STRAFETYPE_OVERLAP_LEFT)
+	{
+		return STRAFETYPE_NONE;
+	}
+	return type;
+}
+
+void BuildStrafeGraph(PlayerData pd, bool left, char[] output, int length, char[] hud, int hudLength)
+{
+	int index;
+	int hudIndex;
+	StrafeType lastType = STRAFETYPE_NONE_RIGHT + STRAFETYPE_NONE_RIGHT;
+	for (int i = 0; i < pd.jumpAirtime && i < MAX_JUMP_FRAMES; i++)
+	{
+		StrafeType type = GetDirectionalStrafeType(pd.strafeGraph[i], left);
+		index += strcopy(output[index], length - index, g_szStrafeType[type]);
+		if (i == 0)
+		{
+			char prefix[32];
+			FormatEx(prefix, sizeof(prefix), "<font color='#FFFFFF'>%s: ", left ? "L" : "R");
+			hudIndex += strcopy(hud, hudLength, prefix);
+		}
+		if (lastType != type)
+		{
+			hudIndex += strcopy(hud[hudIndex], hudLength - hudIndex, g_szStrafeTypeColour[type]);
+		}
+		else
+		{
+			hud[hudIndex++] = '|';
+		}
+		lastType = type;
+	}
+	hud[hudIndex] = '\0';
+}
+
+void AppendMouseGraph(float movement, char[] left, int leftLength, int &leftIndex, char[] right, int rightLength, int &rightIndex)
+{
+	if (movement == 0.0)
+	{
+		left[leftIndex++] = '.';
+		right[rightIndex++] = '.';
+		return;
+	}
+	if (movement < 0.0)
+	{
+		left[leftIndex++] = '.';
+		rightIndex += strcopy(right[rightIndex], rightLength - rightIndex, "█");
+		return;
+	}
+	if (movement > 0.0)
+	{
+		leftIndex += strcopy(left[leftIndex], leftLength - leftIndex, "█");
+		right[rightIndex++] = '.';
+	}
+}
+
+void BuildMouseGraph(PlayerData pd, char[] left, int leftLength, char[] right, int rightLength, char[] hud, int hudLength)
+{
+	char colours[][] = {
 		"<font color='#FFBF00'>|",
 		"<font color='#000000'>|",
 		"<font color='#003FFF'>|"
 	};
-	
-	// nonsensical default values, so that the first comparison check fails
-	StrafeType lastStrafeTypeLeft = STRAFETYPE_NONE_RIGHT + STRAFETYPE_NONE_RIGHT;
-	StrafeType lastStrafeTypeRight = STRAFETYPE_NONE_RIGHT + STRAFETYPE_NONE_RIGHT;
+	int leftIndex;
+	int rightIndex;
+	int hudIndex;
 	int lastMouseIndex = 9999;
 	for (int i = 0; i < pd.jumpAirtime && i < MAX_JUMP_FRAMES; i++)
 	{
-		StrafeType strafeTypeLeft = pd.strafeGraph[i];
-		StrafeType strafeTypeRight = pd.strafeGraph[i];
-		
-		if (strafeTypeLeft == STRAFETYPE_RIGHT
-			|| strafeTypeLeft == STRAFETYPE_NONE_RIGHT
-			|| strafeTypeLeft == STRAFETYPE_OVERLAP_RIGHT)
-		{
-			strafeTypeLeft = STRAFETYPE_NONE;
-		}
-		
-		if (strafeTypeRight == STRAFETYPE_LEFT
-			|| strafeTypeRight == STRAFETYPE_NONE_LEFT
-			|| strafeTypeRight == STRAFETYPE_OVERLAP_LEFT)
-		{
-			strafeTypeRight = STRAFETYPE_NONE;
-		}
-		
-		slIndex += strcopy(strafeLeft[slIndex], sizeof(strafeLeft) - slIndex, g_szStrafeType[strafeTypeLeft]);
-		srIndex += strcopy(strafeRight[srIndex], sizeof(strafeRight) - srIndex, g_szStrafeType[strafeTypeRight]);
-		
-		char mouseChar[] = "█";
-		if (pd.mouseGraph[i] == 0.0)
-		{
-			mouseLeft[mlIndex++] = '.';
-			mouseRight[mrIndex++] = '.';
-		}
-		else if (pd.mouseGraph[i] < 0.0)
-		{
-			mouseLeft[mlIndex++] = '.';
-			mrIndex += strcopy(mouseRight[mrIndex], sizeof(mouseRight) - mrIndex, mouseChar);
-		}
-		else if (pd.mouseGraph[i] > 0.0)
-		{
-			mlIndex += strcopy(mouseLeft[mlIndex], sizeof(mouseLeft) - mlIndex, mouseChar);
-			mouseRight[mrIndex++] = '.';
-		}
-		
+		float movement = pd.mouseGraph[i];
+		AppendMouseGraph(movement, left, leftLength, leftIndex, right, rightLength, rightIndex);
 		if (i == 0)
 		{
-			hslIndex += strcopy(hudStrafeLeft, sizeof(hudStrafeLeft), "<font color='#FFFFFF'>L: ");
-			hsrIndex += strcopy(hudStrafeRight, sizeof(hudStrafeRight), "<font color='#FFFFFF'>R: ");
-			hmIndex += strcopy(hudMouse, sizeof(hudMouse), "<font color='#FFFFFF'>M: ");
+			hudIndex += strcopy(hud, hudLength, "<font color='#FFFFFF'>M: ");
 		}
-		
-		if (lastStrafeTypeLeft != strafeTypeLeft)
-		{
-			hslIndex += strcopy(hudStrafeLeft[hslIndex], sizeof(hudStrafeLeft) - hslIndex, g_szStrafeTypeColour[strafeTypeLeft]);
-		}
-		else
-		{
-			hudStrafeLeft[hslIndex++] = '|';
-		}
-		
-		if (lastStrafeTypeRight != strafeTypeRight)
-		{
-			hsrIndex += strcopy(hudStrafeRight[hsrIndex], sizeof(hudStrafeRight) - hsrIndex, g_szStrafeTypeColour[strafeTypeRight]);
-		}
-		else
-		{
-			hudStrafeRight[hsrIndex++] = '|';
-		}
-		
-		int mouseIndex = FloatSign(pd.mouseGraph[i]) + 1;
+		int mouseIndex = FloatSign(movement) + 1;
 		if (mouseIndex != lastMouseIndex)
 		{
-			hmIndex += strcopy(hudMouse[hmIndex], sizeof(hudMouse) - hmIndex, mouseColours[mouseIndex]);
+			hudIndex += strcopy(hud[hudIndex], hudLength - hudIndex, colours[mouseIndex]);
 		}
 		else
 		{
-			hudMouse[hmIndex++] = '|';
+			hud[hudIndex++] = '|';
 		}
-		
-		lastStrafeTypeLeft = strafeTypeLeft;
-		lastStrafeTypeRight = strafeTypeRight;
 		lastMouseIndex = mouseIndex;
 	}
-	
-	mouseLeft[mlIndex] = '\0';
-	mouseRight[mrIndex] = '\0';
-	hudStrafeLeft[hslIndex] = '\0';
-	hudStrafeRight[hsrIndex] = '\0';
-	hudMouse[hmIndex] = '\0';
-	
-	bool showHudGraph = IsSettingEnabled(client, SETTINGS_SHOW_HUD_GRAPH);
-	if (showHudGraph)
+	left[leftIndex] = '\0';
+	right[rightIndex] = '\0';
+	hud[hudIndex] = '\0';
+}
+
+void GetJumpBeamColour(JumpBeamColour type, int colour[4])
+{
+	if (type == JUMPBEAM_LOSS)
 	{
-		// worst case scenario is roughly 11000 characters :D
-		char strafeGraph[11000];
-		FormatEx(strafeGraph, sizeof(strafeGraph), "<u><span class='fontSize-s'>%s<br>%s<br>%s", hudStrafeLeft, hudStrafeRight, hudMouse);
-		
-		// TODO: sometimes just after a previous panel has faded out a new panel can't be shown, fix!
-		ShowPanel(client, 3, strafeGraph);
+		colour = {255, 0, 255, 255};
+		return;
 	}
-	if (!IsSettingEnabled(client, SETTINGS_DISABLE_STRAFE_GRAPH))
+	if (type == JUMPBEAM_GAIN)
 	{
-		ClientAndSpecsPrintConsole(client, "\nStrafe keys:\nL: %s\nR: %s", strafeLeft, strafeRight);
-		ClientAndSpecsPrintConsole(client, "Mouse movement:\nL: %s\nR: %s\n\n", mouseLeft, mouseRight);
+		colour = {0, 127, 0, 255};
+		return;
 	}
+	if (type == JUMPBEAM_DUCK)
+	{
+		colour = {0, 31, 127, 255};
+		return;
+	}
+	colour = {255, 191, 0, 255};
+}
+
+void UpdateJumpTracking(int client)
+{
+	if (!IsSettingEnabled(client, SETTINGS_DISTBUG_ENABLED))
+	{
+		return;
+	}
+
+	UpdateWalkedOffPosition(g_pd[client]);
+
+	bool forwardReleased = (g_pd[client].lastButtons & g_jumpDirForwardButton[g_pd[client].jumpDir])
+		&& !(g_pd[client].buttons & g_jumpDirForwardButton[g_pd[client].jumpDir]);
+	if (forwardReleased)
+	{
+		g_pd[client].fwdReleaseFrame = g_pd[client].tickCount;
+	}
+	
+	if (!g_pd[client].trackingJump
+		&& g_pd[client].movetype == MOVETYPE_WALK
+		&& g_pd[client].lastMovetype == MOVETYPE_LADDER)
+	{
+		OnPlayerJumped(client, g_pd[client], JUMPTYPE_LAJ);
+	}
+	
+	if (g_pd[client].framesOnGround == 1)
+	{
+		TrackJump(g_pd[client], g_failstatPD[client]);
+		OnPlayerLanded(client, g_pd[client], g_failstatPD[client]);
+	}
+
+	if (g_pd[client].trackingJump)
+	{
+		TrackJump(g_pd[client], g_failstatPD[client]);
+	}
+}
+
+void UpdateWalkedOffPosition(PlayerData pd)
+{
+	if (pd.framesInAir == 1)
+	{
+		if (!GCVectorsEqual(pd.lastGroundPos, pd.lastPosition))
+		{
+			pd.lastGroundPos = pd.lastPosition;
+			pd.lastGroundPosWalkedOff = true;
+		}
+	}
+
+}
+
+JumpDir GetJumpDirection(PlayerData pd)
+{
+	float speed = GCGetVectorLength2D(pd.velocity);
+	if (!(speed > 50.0) || pd.jumpType == JUMPTYPE_LAJ)
+	{
+		return JUMPDIR_FORWARDS;
+	}
+	float velocityYaw = RadToDeg(ArcTangent2(pd.velocity[1], pd.velocity[0]));
+	float direction = GCNormaliseYaw(pd.angles[1] - velocityYaw);
+	if (GCIsFloatInRange(direction, 45.0, 135.0))
+	{
+		return JUMPDIR_RIGHT;
+	}
+	if (GCIsFloatInRange(direction, -135.0, -45.0))
+	{
+		return JUMPDIR_LEFT;
+	}
+	if (direction > 135.0 || direction < -135.0)
+	{
+		return JUMPDIR_BACKWARDS;
+	}
+	return JUMPDIR_FORWARDS;
+}
+
+void CorrectLandingPosition(PlayerData pd)
+{
+	float landOrigin[3];
+	float gravity = g_gravity.FloatValue * pd.gravity;
+	float frametime = GetTickInterval();
+	float fixedVelocity[3];
+	float airOrigin[3];
+
+	float lastPosition[3];
+	lastPosition = pd.lastPosition;
+	bool lastDucking = !!(pd.lastFlags & FL_DUCKING);
+	bool ducking = !!(pd.flags & FL_DUCKING);
+	if (!lastDucking && ducking)
+	{
+		lastPosition[2] += 9.0;
+	}
+	else if (lastDucking && !ducking)
+	{
+		lastPosition[2] -= 9.0;
+	}
+
+	bool isBugged = pd.lastPosition[2] - pd.landGroundZ < 2.0;
+	if (isBugged)
+	{
+		fixedVelocity = pd.velocity;
+		fixedVelocity[2] = pd.lastVelocity[2] - gravity * 0.5 * frametime;
+		airOrigin = lastPosition;
+	}
+	else
+	{
+		float tempVel[3];
+		tempVel = pd.velocity;
+		tempVel[2] = pd.lastVelocity[2] - gravity * 0.5 * frametime;
+		fixedVelocity = tempVel;
+		fixedVelocity[2] -= gravity * frametime;
+
+		airOrigin = pd.position;
+	}
+
+	GetRealLandingOrigin(pd.landGroundZ, airOrigin, fixedVelocity, landOrigin);
+	pd.landPos = landOrigin;
+
 }
